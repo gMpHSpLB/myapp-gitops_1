@@ -10,7 +10,7 @@ image:
 replicaCount: 2
 config:
   APP_ENV: "staging"
-  APP_LOG_LEVEL: "info"
+  APP_LOG_LEVEL: "INFO"
   APP_PORT: "8000"
 resources:
   requests:

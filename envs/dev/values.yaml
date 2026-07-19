@@ -10,7 +10,7 @@ image:
 replicaCount: 1
 config:
   APP_ENV: "dev"
-  APP_LOG_LEVEL: "debug"
+  APP_LOG_LEVEL: "DEBUG"
   APP_PORT: "8000"
 resources:
   requests:
