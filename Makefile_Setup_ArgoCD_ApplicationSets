@@ -50,6 +50,17 @@ KUBECTL    ?= kubectl
 ARGOCD     ?= argocd
 ARGOCD_NS  ?= argocd
 
+.PHONY: apply-staging-secret
+apply-staging-secret: ## Apply Secret for STAGING environment
+	kubectl apply \
+		-f secrets/myapp-staging-secret.yaml
+
+
+.PHONY: apply-prod-secret
+apply-prod-secret: ## Apply Secret for PROD environment
+	kubectl apply \
+		-f secrets/myapp-prod-secret.yaml
+
 # Reset: delete Applications, ApplicationSet, and namespaces for myapp envs
 .PHONY: reset-myapp-envs-applications-and-namespaces
 reset-myapp-envs-applications-and-namespaces: ## Delete myapp env Applications, ApplicationSet, and namespaces
