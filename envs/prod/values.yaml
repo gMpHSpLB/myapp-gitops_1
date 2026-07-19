@@ -10,7 +10,7 @@ image:
 replicaCount: 3
 config:
   APP_ENV: "prod"
-  APP_LOG_LEVEL: "warn"
+  APP_LOG_LEVEL: "WARNING"
   APP_PORT: "8000"
 resources:
   requests:
@@ -48,6 +48,12 @@ probes:
     initialDelaySeconds: 20
     periodSeconds: 10
     failureThreshold: 3
+  startup:
+    path: /
+    port: 8000
+    initialDelaySeconds: 0
+    periodSeconds: 2
+    failureThreshold: 30
 podDisruptionBudget:
   enabled: true
   minAvailable: 2

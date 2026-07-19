@@ -35,6 +35,12 @@ probes:
     initialDelaySeconds: 15
     periodSeconds: 10
     failureThreshold: 3
+  startup:
+    path: /
+    port: 8000
+    initialDelaySeconds: 0
+    periodSeconds: 2
+    failureThreshold: 30
 podDisruptionBudget:
   enabled: false
 autoscaling:
