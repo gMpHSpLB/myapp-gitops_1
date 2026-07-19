@@ -45,10 +45,53 @@ K8S_NAMESPACE_STAGING					?= myapp-staging
 K8S_NAMESPACE_PROD						?= myapp-prod
 
 
+KUBECONFIG ?= ~/.kube/config
+KUBECTL    ?= kubectl
+ARGOCD     ?= argocd
+ARGOCD_NS  ?= argocd
+
+# Reset: delete Applications, ApplicationSet, and namespaces for myapp envs
+.PHONY: reset-myapp-envs-applications-and-namespaces
+reset-myapp-envs-applications-and-namespaces: ## Delete myapp env Applications, ApplicationSet, and namespaces
+	@echo "Deleting myapp-dev/staging/prod Applications (if they exist)..."
+	-$(ARGOCD) app delete myapp-dev --cascade --yes || true
+	-$(ARGOCD) app delete myapp-staging --cascade --yes || true
+	-$(ARGOCD) app delete myapp-prod --cascade --yes || true
+
+	@echo "Deleting myapp-environments ApplicationSet (if it exists)..."
+	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) delete applicationset myapp-environments \
+		-n $(ARGOCD_NS) --ignore-not-found
+
+	@echo "Deleting namespaces myapp-dev/staging/prod (if they exist)..."
+	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) delete ns myapp-dev --ignore-not-found
+	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) delete ns myapp-staging --ignore-not-found
+	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) delete ns myapp-prod --ignore-not-found
+
+# Verify reset (optional sanity check)
+.PHONY: verify-reset-myapp-envs-applications-and-namespaces
+verify-reset-myapp-envs-applications-and-namespaces:
+	@echo "Verifying myapp env Applications and namespaces are gone..."
+	-$(ARGOCD) app get myapp-dev && echo "myapp-dev still exists" || echo "myapp-dev removed"
+	-$(ARGOCD) app get myapp-staging && echo "myapp-staging still exists" || echo "myapp-staging removed"
+	-$(ARGOCD) app get myapp-prod && echo "myapp-prod still exists" || echo "myapp-prod removed"
+	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) get ns myapp-dev && echo "ns/myapp-dev still exists" || echo "ns/myapp-dev removed"
+	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) get ns myapp-staging && echo "ns/myapp-staging still exists" || echo "ns/myapp-staging removed"
+	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) get ns myapp-prod && echo "ns/myapp-prod still exists" || echo "ns/myapp-prod removed"
+
+.PHONY: check-myapp-envs-applicationset-and-apps-exist
+check-myapp-envs-applicationset-and-apps-exist:
+	@echo "Checking existing ApplicationSet and Applications..."
+	-$(KUBECTL) get applicationset myapp-environments -n $(ARGOCD_NS) \
+		&& echo "ApplicationSet myapp-environments exists" \
+		|| echo "ApplicationSet myapp-environments not found"
+	-$(ARGOCD) app get myapp-dev && echo "myapp-dev exists" || echo "myapp-dev not found"
+	-$(ARGOCD) app get myapp-staging && echo "myapp-staging exists" || echo "myapp-staging not found"
+	-$(ARGOCD) app get myapp-prod && echo "myapp-prod exists" || echo "myapp-prod not found"
+
 # Apply the ApplicationSet that generates myapp-dev/staging/prod
 .PHONY: k8s-apply-myapp-envs-applicationset-to-cluster
 k8s-apply-myapp-envs-applicationset-to-cluster:
-	$(KUBECTL) --kubeconfig=$(KUBECONFIG) apply \
+	$(KUBECTL) apply \
 		-n $(ARGOCD_NAMESPACE) \
 		-f applicationsets/myapp-envs.yaml
 
@@ -59,6 +102,7 @@ argocd-watch-status-of-myapp-envs-applications:
 	@timeout 300s $(ARGOCD_CLI_TOOL) app wait myapp-dev myapp-staging myapp-prod \
 		--health --sync || \
 		( echo "Timed out waiting for myapp env Applications to become Healthy+Synced"; exit 1 )
+	
 
 # Get detailed status for each env Application
 .PHONY: argocd-get-detailed-status-of-myapp-envs-applications

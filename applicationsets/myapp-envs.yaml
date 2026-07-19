@@ -57,7 +57,7 @@ spec:
               - "$values/envs/{{.path.basename}}/values.yaml"
 
         # Source 2: GitOps repo providing $values
-        - repoURL: https://github.com/gMpHSpLB/Gitops-Argocd_1.git
+        - repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
           targetRevision: main
           ref: values
 

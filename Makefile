@@ -11,12 +11,7 @@ RESET  := \033[0m
 .PHONY: help #- Show targets
 .PHONY: setup-minikube #- Ensure Minikube cluster is running with correct profile
 .PHONY: setup-argocd 
-.PHONY: create-argocd-dev-application-and-status-check # Create ArgoCD Application in dev environment and check status
-.PHONY: check-both-status-dimensions-sync-and-health-for-dev-application
-#.PHONY: understand-gitops-in-argocd-with-drift-detection
-#.PHONY: understand-sync-mode-strategies-for-dev-satging-and-prod-environment
-#.PHONY: understand-sync-waves-and-how-to-handle-resource-order
-#.PHONY: understand-app-of-apps-pattern-one-root-application-manages-other-applications
+
 
 # Self-documenting help: list targets with "##" comments
 help: ## Show all available targets with short descriptions.
@@ -109,6 +104,7 @@ create-argocd-myapp-envs-applicationset-and-status-check: ## Create ApplicationS
 		'Step 1. Apply the myapp-environments ApplicationSet to the argocd namespace'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 1..."; \
 	read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets check-myapp-envs-applicationset-and-apps-exist
 	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets k8s-apply-myapp-envs-applicationset-to-cluster
 
 	@printf '$(CYAN) %s $(RESET) \n' \
