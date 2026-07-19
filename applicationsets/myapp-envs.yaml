@@ -1,0 +1,85 @@
+# Keep the Git directory generator over envs/*.
+#
+# In the template, use two sources:
+#     Source 1: OCI Helm chart from ghcr.io/gmphsplb/helm-lab.
+#     Source 2: GitOps repo Gitops-Argocd_1, providing $values/envs/<env>/values.yaml
+# What this does for each directory:
+#     For envs/dev (.path.basename = dev):
+#         valueFiles: "$values/envs/dev/values.yaml".
+#
+#     For envs/staging:
+#         valueFiles: "$values/envs/staging/values.yaml".
+#
+#     For envs/prod:
+#         valueFiles: "$values/envs/prod/values.yaml".
+#
+# Rightnow we are not using env-config.yaml
+# next step we can start using env-config.yaml to customize 
+# syncPolicy per environment (e.g. autoSync on dev only) by 
+# switching from pure directory generator to a Git file generator 
+# or Merge generator.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: myapp-environments
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+
+  generators:
+    - git:
+        repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
+        revision: main
+        directories:
+          - path: envs/*
+
+  template:
+    metadata:
+      name: "myapp-{{.path.basename}}"
+      labels:
+        app: myapp
+        environment: "{{.path.basename}}"
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+
+    spec:
+      project: myapp-team
+
+      # Multi-source: Helm chart from OCI + values from GitOps
+      sources:
+        # Source 1: OCI Helm chart
+        - repoURL: ghcr.io/gmphsplb/helm-lab
+          chart: myapp
+          targetRevision: "1.0.0"
+          helm:
+            valueFiles:
+              - "$values/envs/{{.path.basename}}/values.yaml"
+
+        # Source 2: GitOps repo providing $values
+        - repoURL: https://github.com/gMpHSpLB/Gitops-Argocd_1.git
+          targetRevision: main
+          ref: values
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "myapp-{{.path.basename}}"
+
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          - Validate=true
+          - ApplyOutOfSyncOnly=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas

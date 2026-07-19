@@ -1,0 +1,9 @@
+environment: prod
+autoSync: false
+selfHeal: false
+namespace: myapp-prod
+revision: main
+chartVersion: "1.0.0"
+notifySlack: deployments
+notifyPagerduty: platform-oncall
+requireManualPromotion: true

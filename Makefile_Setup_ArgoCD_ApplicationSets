@@ -1,0 +1,82 @@
+# Use Bash for shell commands in recipes.
+# This gives us better shell features than plain sh.
+SHELL := /bin/bash
+
+# Default target
+.DEFAULT_GOAL := help
+
+.PHONY: help #- Show all available targets with short descriptions.
+
+
+# Self-documenting help: list targets with "##" comments
+help: ## Show all available targets with short descriptions.
+	# This target reads the Makefile and prints any line ending with ##.
+	# Use this when you want to discover available commands quickly.
+	# Expected output: a list of targets and one-line descriptions.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+# ---------- GLOBAL CONFIG --------------------------------------
+KUBECONFIG 								?= ~/.kube/config
+KUBECTL    								?= kubectl
+ARGOCD_CLI_TOOL 						?= bin/argocd
+
+
+# Set ARGOCD_SERVER to the service, not localhost
+ARGOCD_PORT 							?= 8080
+ARGOCD_SERVER_URL						?= localhost:$(ARGOCD_PORT)
+ARGOCD_USERNAME 						?= admin
+ARGOCD_ADMIN_PASSWORD					?= admin123
+#Set to true in-case you want to delete the initial argocd server password
+DELETE_INITIAL_ARGOCD_ADMIN_PASSWORD	?= false
+# For local dev, we often disable TLS verification for the CLI.
+# Set to false if you want to disable insecure login
+DISABLE_INSECURE_PATCH 					?= true
+ARGOCD_INSECURE 						?= true
+ARGOCD_PF_LOG 							?= /tmp/argocd-port-forward.log
+ARGOCD_PF_PID 							?= /tmp/argocd-port-forward.pid
+
+ARGOCD_NAMESPACE 						?= argocd
+ARGOCD_DEV_APP_NAME             		?= myapp-dev
+ARGOCD_STAGING_APP_NAME        		 	?= myapp-staging
+ARGOCD_PROD_APP_NAME            		?= myapp-prod
+# --------------- ArgoCD Application ------------------------------
+K8S_NAMESPACE_DEV 						?= myapp-dev
+K8S_NAMESPACE_STAGING					?= myapp-staging
+K8S_NAMESPACE_PROD						?= myapp-prod
+
+
+# Apply the ApplicationSet that generates myapp-dev/staging/prod
+.PHONY: k8s-apply-myapp-envs-applicationset-to-cluster
+k8s-apply-myapp-envs-applicationset-to-cluster:
+	$(KUBECTL) --kubeconfig=$(KUBECONFIG) apply \
+		-n $(ARGOCD_NAMESPACE) \
+		-f applicationsets/myapp-envs.yaml
+
+# Watch all myapp-* Applications until they reach Synced & Healthy, with timeout
+.PHONY: argocd-watch-status-of-myapp-envs-applications
+argocd-watch-status-of-myapp-envs-applications:
+	@echo "Watching status of myapp-dev/staging/prod Applications (timeout 300s)..."
+	@timeout 300s $(ARGOCD_CLI_TOOL) app wait myapp-dev myapp-staging myapp-prod \
+		--health --sync || \
+		( echo "Timed out waiting for myapp env Applications to become Healthy+Synced"; exit 1 )
+
+# Get detailed status for each env Application
+.PHONY: argocd-get-detailed-status-of-myapp-envs-applications
+argocd-get-detailed-status-of-myapp-envs-applications:
+	$(ARGOCD_CLI_TOOL) app get myapp-dev || true
+	$(ARGOCD_CLI_TOOL) app get myapp-staging || true
+	$(ARGOCD_CLI_TOOL) app get myapp-prod || true
+
+# See resources ArgoCD created for each env Application
+.PHONY: argocd-see-resources-of-myapp-envs-applications
+argocd-see-resources-of-myapp-envs-applications:
+	$(ARGOCD_CLI_TOOL) app resources myapp-dev || true
+	$(ARGOCD_CLI_TOOL) app resources myapp-staging || true
+	$(ARGOCD_CLI_TOOL) app resources myapp-prod || true
+
+# See diff between desired and actual for each env Application
+.PHONY: argocd-see-diff-of-myapp-envs-applications
+argocd-see-diff-of-myapp-envs-applications:
+	$(ARGOCD_CLI_TOOL) app diff myapp-dev || true
+	$(ARGOCD_CLI_TOOL) app diff myapp-staging || true
+	$(ARGOCD_CLI_TOOL) app diff myapp-prod || true

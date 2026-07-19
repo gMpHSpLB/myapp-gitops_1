@@ -1,0 +1,58 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: myapp-matrix
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          # Generator A: one entry per environment directory, reading env-config.yaml content
+          - git:
+              repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
+              revision: main
+              files:
+                - path: "envs/*/env-config.yaml"
+          # Generator B: cluster targets, matched by label to the environment
+          - clusters:
+              selector:
+                matchLabels:
+                  argocd.argoproj.io/secret-type: cluster
+
+  template:
+    metadata:
+      name: "myapp-{{.environment}}"
+      labels:
+        environment: "{{.environment}}"
+      annotations:
+        notifications.argoproj.io/subscribe.on-sync-failed.slack: "{{.notifySlack}}"
+    spec:
+      project: myapp-team
+      source:
+        repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
+        targetRevision: "{{.revision}}"
+        path: .
+        helm:
+          valueFiles:
+            - "envs/{{.environment}}/values.yaml"
+      destination:
+        server: "{{.server}}"
+        namespace: "{{.namespace}}"
+      syncPolicy:
+        # goTemplate + sprig conditional: automated block only rendered when autoSync is true.
+        # ArgoCD's ApplicationSet controller supports this via the `elementsYaml`/conditional
+        # patterns documented for goTemplate — shown here in simplified form:
+        automated:
+          prune: '{{if eq .autoSync "true"}}true{{else}}false{{end}}' == "true" ? {} : null
+        syncOptions:
+          - CreateNamespace=true
+          - Validate=true
+          - ApplyOutOfSyncOnly=true
+          - ServerSideApply=true
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas

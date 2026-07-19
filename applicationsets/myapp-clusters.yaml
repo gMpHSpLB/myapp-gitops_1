@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: myapp-clusters
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            argocd.argoproj.io/secret-type: cluster
+        values:
+          # cluster.name and cluster.server are always available;
+          # 'values' lets you inject extra per-cluster template vars
+          environment: "{{.metadata.labels.environment}}"
+
+  template:
+    metadata:
+      name: "myapp-{{.name}}"
+    spec:
+      project: myapp-team
+      source:
+        repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
+        targetRevision: main
+        path: .
+        helm:
+          valueFiles:
+            - "envs/{{.values.environment}}/values.yaml"
+      destination:
+        server: "{{.server}}"          # <-- the actual point of the cluster generator:
+        namespace: "myapp-{{.values.environment}}"   #     each Application targets a different cluster
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true

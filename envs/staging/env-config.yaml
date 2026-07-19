@@ -1,0 +1,8 @@
+environment: staging
+autoSync: false
+selfHeal: false
+namespace: myapp-staging
+revision: main
+chartVersion: "1.0.0"
+notifySlack: deployments
+notifyPagerduty: platform-oncall

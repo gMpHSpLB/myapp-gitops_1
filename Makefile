@@ -1,0 +1,148 @@
+SHELL := /bin/bash
+# Default target
+.DEFAULT_GOAL := help
+
+RED    := \033[1;31m
+YELLOW := \033[1;33m
+GREEN  :="\033[1;32m"
+CYAN   := \033[1;36m
+RESET  := \033[0m
+
+.PHONY: help #- Show targets
+.PHONY: setup-minikube #- Ensure Minikube cluster is running with correct profile
+.PHONY: setup-argocd 
+.PHONY: create-argocd-dev-application-and-status-check # Create ArgoCD Application in dev environment and check status
+.PHONY: check-both-status-dimensions-sync-and-health-for-dev-application
+#.PHONY: understand-gitops-in-argocd-with-drift-detection
+#.PHONY: understand-sync-mode-strategies-for-dev-satging-and-prod-environment
+#.PHONY: understand-sync-waves-and-how-to-handle-resource-order
+#.PHONY: understand-app-of-apps-pattern-one-root-application-manages-other-applications
+
+# Self-documenting help: list targets with "##" comments
+help: ## Show all available targets with short descriptions.
+	# This target reads the Makefile and prints any line ending with ##.
+	# Use this when you want to discover available commands quickly.
+	# Expected output: a list of targets and one-line descriptions.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+# Convenience wrapper to call setup Makefile targets
+setup-minikube: ## Ensure Minikube cluster is running with correct profile
+	@echo -e "$(CYAN) Ensure Minikube cluster is running with correct profile $(RESET)"; \
+	$(MAKE) -f Makefile_Setup ensure-minikube
+	$(MAKE) -f Makefile_Setup enable-minikube-addons
+	$(MAKE) -f Makefile_Setup check-clusterinfo
+	$(MAKE) -f Makefile_Setup kubectl-get-nodes
+
+setup-argocd: ## 
+	@printf '$(CYAN) %s $(RESET) \n' \
+		' What will we do to setup ArgoCD: ' \
+		' 		- Step 1. Setup Minikube ' \
+		' 		- Step 2. Create Namespace and Install ArgoCD on minikube ' \
+		' 		- Step 3. ArgoCD Initial Setup (CLI install, Server Access, CLI login, Update Password ) ' \
+		' 		- Step 4. Make ArgoCD installation production ready by hardening installation' \
+		' 		- Step 5. Register the public Helm OCI repo as a source for hel chart with ArgoCD'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to continue..."; \
+	read -r _
+
+	@printf '$(CYAN) %s $(RESET) \n' "Step 1. Setup Minikube"; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 1...";  \
+	read -r _; \
+	$(MAKE) setup-minikube; \
+	echo " --------------------------------------------------------------------------------"
+
+	@printf '$(CYAN) %s $(RESET) \n' "Step 2. Install ArgoCD on minikube"; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 2..."; \
+	read -r _; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering install_argocd_on_minikube; \
+	echo " --------------------------------------------------------------------------------"
+
+	@printf '$(CYAN) %s $(RESET) \n' \
+		' Step 3. ArgoCD Initial Setup: ' \
+		' 		- Access Argocd server UI ' \
+		' 		- Get Initial Argocd Server Admin Password ' \
+		' 		- Install Argocd CLI tool ' \
+		' 		- Change UI Admin Password ' \
+		'		- Login into Argocd Server UI ' \
+		' 		- Optional: Delete Initial Adming Password '; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3..."; \
+	read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering access-argocd-server-ui-and-do-initial-configuration
+
+	@printf '$(CYAN) %s $(RESET) \n' \
+		' Step 4. Make ArgoCD installation production ready by hardening installation: ' \
+		' 		- Disable-insecure-mode-of-argocd-server-by-applying-patch ' \
+		' 		- Set-resource-tracking-method-to-annotation-by-applying-patch ' \
+		' 		- Configure-resource-health-checks-timeout-by-applying-patch ' \
+		' 		- Restart-argocd-server-to-pick-up-config-changes-by-applying-patch '; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 4..."; \
+	read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering make-argocd-installation-production-ready-by-hardening-installation
+
+	@printf '$(CYAN) %s $(RESET) \n' \
+		' Step 5. Register the public Helm OCI repo as a source for hel chart with ArgoCD'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 5..."; \
+	read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-apply-argocd-oci-helm-lab-repo-secret
+	$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering register-public-helm-oci-repo-as-source-for-helm-chart-with-argocd
+
+.PHONY: create-argocd-myapp-envs-applicationset-and-status-check
+create-argocd-myapp-envs-applicationset-and-status-check: ## Create ApplicationSet for myapp envs and check status
+	@printf '$(CYAN) %s $(RESET) \n' \
+		' An ArgoCD ApplicationSet is a Kubernetes custom resource that declares:' \
+		'       - How to generate many Applications (generators: Git Directory)' \
+		'       - A shared template for those Applications (sources, destination, syncPolicy)' \
+		'       - One desired state per combination of env/cluster/region, etc.'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to continue..."; \
+	read -r _
+
+	@printf '$(CYAN) %s $(RESET) \n' \
+		' What will we do to setup the ApplicationSet for myapp envs:' \
+		'       - Step 1. Apply the myapp-environments ApplicationSet to the argocd namespace' \
+		'       - Step 2. Watch status of generated myapp-dev/staging/prod Applications (Healthy + Synced, with timeout)' \
+		'       - Step 3. Get detailed status for myapp-dev/staging/prod Applications' \
+		'       - Step 4. See resources ArgoCD created for each myapp env Application' \
+		'       - Step 5. See diff between desired and actual for each myapp env Application'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to continue..."; \
+	read -r _
+
+	@printf '$(CYAN) %s $(RESET) \n' \
+		'Step 1. Apply the myapp-environments ApplicationSet to the argocd namespace'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 1..."; \
+	read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets k8s-apply-myapp-envs-applicationset-to-cluster
+
+	@printf '$(CYAN) %s $(RESET) \n' \
+		'Step 2. Watch status of myapp-dev/staging/prod Applications until Healthy + Synced (timeout enforced)'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 2..."; \
+	read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-watch-status-of-myapp-envs-applications
+
+	@printf '$(CYAN) %s $(RESET) \n' \
+		'Step 3. Get detailed status of myapp-dev/staging/prod Applications'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3..."; \
+	read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-get-detailed-status-of-myapp-envs-applications
+
+	@printf '$(CYAN) %s $(RESET) \n' \
+		'Step 4. See resources ArgoCD created for myapp-dev/staging/prod Applications'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 4..."; \
+	read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-see-resources-of-myapp-envs-applications
+
+	@printf '$(CYAN) %s $(RESET) \n' \
+		'Step 5. See diff between desired and actual for myapp-dev/staging/prod Applications'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 5..."; \
+	read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-see-diff-of-myapp-envs-applications
+
+
+# Example: safe usage pattern
+# Start from a clean shell.
+# Run:
+# bash
+# make setup-minikube
+# This ensures k8s-learning profile is up and configured.
+
+# Then run:
+# bash
+# make setup-argocd

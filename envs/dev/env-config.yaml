@@ -1,0 +1,7 @@
+environment: dev
+autoSync: true
+selfHeal: true
+namespace: myapp-dev
+revision: main
+chartVersion: "1.0.0"
+notifySlack: platform-alerts
