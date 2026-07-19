@@ -124,3 +124,39 @@ argocd-see-diff-of-myapp-envs-applications:
 	$(ARGOCD_CLI_TOOL) app diff myapp-dev || true
 	$(ARGOCD_CLI_TOOL) app diff myapp-staging || true
 	$(ARGOCD_CLI_TOOL) app diff myapp-prod || true
+
+.PHONY: argocd-sync-and-wait-myapp-dev
+argocd-sync-and-wait-myapp-dev: ## Sync myapp-dev and wait for Healthy+Synced
+	@echo "Syncing myapp-dev..."
+	@$(ARGOCD_CLI_TOOL) app sync myapp-dev || \
+		( echo "Failed to start sync for myapp-dev"; exit 1 )
+
+	@echo "Waiting for myapp-dev to be Synced and Healthy (timeout 300s)..."
+	@$(ARGOCD_CLI_TOOL) app wait myapp-dev --sync --health --timeout 300 || \
+		( echo "myapp-dev did not reach Synced+Healthy within timeout"; \
+		  $(ARGOCD_CLI_TOOL) app get myapp-dev; \
+		  exit 1 )
+
+.PHONY: argocd-sync-and-wait-myapp-staging
+argocd-sync-and-wait-myapp-staging: ## Sync myapp-staging and wait for Healthy+Synced
+	@echo "Syncing myapp-staging..."
+	@$(ARGOCD_CLI_TOOL) app sync myapp-staging || \
+		( echo "Failed to start sync for myapp-staging"; exit 1 )
+
+	@echo "Waiting for myapp-staging to be Synced and Healthy (timeout 300s)..."
+	@$(ARGOCD_CLI_TOOL) app wait myapp-staging --sync --health --timeout 300 || \
+		( echo "myapp-staging did not reach Synced+Healthy within timeout"; \
+		  $(ARGOCD_CLI_TOOL) app get myapp-staging; \
+		  exit 1 )
+
+.PHONY: argocd-sync-and-wait-myapp-prod
+argocd-sync-and-wait-myapp-prod: ## Sync myapp-prod and wait for Healthy+Synced
+	@echo "Syncing myapp-prod..."
+	@$(ARGOCD_CLI_TOOL) app sync myapp-prod || \
+		( echo "Failed to start sync for myapp-prod"; exit 1 )
+
+	@echo "Waiting for myapp-prod to be Synced and Healthy (timeout 300s)..."
+	@$(ARGOCD_CLI_TOOL) app wait myapp-prod --sync --health --timeout 300 || \
+		( echo "myapp-prod did not reach Synced+Healthy within timeout"; \
+		  $(ARGOCD_CLI_TOOL) app get myapp-prod; \
+		  exit 1 )

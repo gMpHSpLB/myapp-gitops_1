@@ -107,6 +107,19 @@ create-argocd-myapp-envs-applicationset-and-status-check: ## Create ApplicationS
 	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets check-myapp-envs-applicationset-and-apps-exist
 	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets k8s-apply-myapp-envs-applicationset-to-cluster
 
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 1.2. Sync myapp-dev and wait for Synced+Healthy'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 2..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-sync-and-wait-myapp-dev
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 1.3. Sync myapp-staging and wait for Synced+Healthy (once env values are ready)'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-sync-and-wait-myapp-staging || true
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 1.4. Sync myapp-prod and wait for Synced+Healthy (once env values are ready)'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 4..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-sync-and-wait-myapp-prod || true
+
+
 	@printf '$(CYAN) %s $(RESET) \n' \
 		'Step 2. Watch status of myapp-dev/staging/prod Applications until Healthy + Synced (timeout enforced)'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 2..."; \
