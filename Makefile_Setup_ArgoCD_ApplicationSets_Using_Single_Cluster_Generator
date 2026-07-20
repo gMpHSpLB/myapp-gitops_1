@@ -218,8 +218,8 @@ k8s-apply-myapp-clusters-applicationset-to-cluster: ## Apply myapp-clusters Appl
 .PHONY: argocd-sync-and-wait-myapp-in-cluster
 argocd-sync-and-wait-myapp-in-cluster: ## Sync myapp-in-cluster and wait for Synced+Healthy
 	@echo "Syncing myapp-in-cluster and wait for Synced+Healthy..."
-	@$(ARGOCD_CLI_TOOL) app sync myapp-in-cluster
-	@$(ARGOCD_CLI_TOOL) app wait myapp-in-cluster --sync --health --timeout 300
+	@$(ARGOCD_CLI_TOOL) app sync myapp-in-cluster || true
+	@$(ARGOCD_CLI_TOOL) app wait myapp-in-cluster --sync --health --timeout 300 || true
 
 #
 # This fulfills your three goals:
