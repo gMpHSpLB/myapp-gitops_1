@@ -104,46 +104,46 @@ create-argocd-myapp-envs-applicationset-and-status-check: ## Create ApplicationS
 		'Step 1. Apply the myapp-environments ApplicationSet to the argocd namespace'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 1..."; \
 	read -r _
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets check-myapp-envs-applicationset-and-apps-exist
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets k8s-apply-myapp-envs-applicationset-to-cluster
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator check-myapp-envs-applicationset-and-apps-exist
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator k8s-apply-myapp-envs-applicationset-to-cluster
 
 	@printf '$(CYAN) %s $(RESET) \n' 'Step 1.2. Sync myapp-dev and wait for Synced+Healthy'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 2..."; read -r _
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-sync-and-wait-myapp-dev
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator argocd-sync-and-wait-myapp-dev
 
 	@printf '$(CYAN) %s $(RESET) \n' 'Step 1.3. Sync myapp-staging and wait for Synced+Healthy (once env values are ready)'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3..."; read -r _
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-sync-and-wait-myapp-staging || true
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets apply-staging-secret
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator argocd-sync-and-wait-myapp-staging || true
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator apply-staging-secret
 
 	@printf '$(CYAN) %s $(RESET) \n' 'Step 1.4. Sync myapp-prod and wait for Synced+Healthy (once env values are ready)'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 4..."; read -r _
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-sync-and-wait-myapp-prod || true
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets apply-prod-secret
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator argocd-sync-and-wait-myapp-prod || true
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator apply-prod-secret
 
 	@printf '$(CYAN) %s $(RESET) \n' \
 		'Step 2. Watch status of myapp-dev/staging/prod Applications until Healthy + Synced (timeout enforced)'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 2..."; \
 	read -r _
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-watch-status-of-myapp-envs-applications
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator argocd-watch-status-of-myapp-envs-applications
 
 	@printf '$(CYAN) %s $(RESET) \n' \
 		'Step 3. Get detailed status of myapp-dev/staging/prod Applications'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3..."; \
 	read -r _
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-get-detailed-status-of-myapp-envs-applications
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator argocd-get-detailed-status-of-myapp-envs-applications
 
 	@printf '$(CYAN) %s $(RESET) \n' \
 		'Step 4. See resources ArgoCD created for myapp-dev/staging/prod Applications'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 4..."; \
 	read -r _
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-see-resources-of-myapp-envs-applications
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator argocd-see-resources-of-myapp-envs-applications
 
 	@printf '$(CYAN) %s $(RESET) \n' \
 		'Step 5. See diff between desired and actual for myapp-dev/staging/prod Applications'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 5..."; \
 	read -r _
-	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets argocd-see-diff-of-myapp-envs-applications
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator argocd-see-diff-of-myapp-envs-applications
 
 
 # Example: safe usage pattern
