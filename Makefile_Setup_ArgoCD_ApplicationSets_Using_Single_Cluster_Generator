@@ -266,7 +266,7 @@ test-myapp-cluster-generator-as-dev:
 
 	@printf '$(CYAN) %s $(RESET) \n' 'Step 4. List myapp Applications (envs vs clusters)'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3..."; read -r _
-	$(ARGOCD) app list | grep myapp-
+	$(ARGOCD_CLI_TOOL) app list | grep myapp-
 
 .PHONY: test-myapp-cluster-generator-as-staging
 test-myapp-cluster-generator-as-staging:
@@ -288,7 +288,7 @@ test-myapp-cluster-generator-as-staging:
 	
 	@printf '$(CYAN) %s $(RESET) \n' 'Step 4. List myapp Applications (envs vs clusters)'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3..."; read -r _
-	$(ARGOCD) app list | grep myapp-
+	$(ARGOCD_CLI_TOOL) app list | grep myapp-
 
 .PHONY: test-myapp-cluster-generator-as-prod
 test-myapp-cluster-generator-as-prod:
@@ -310,7 +310,7 @@ test-myapp-cluster-generator-as-prod:
 	
 	@printf '$(CYAN) %s $(RESET) \n' 'Step 4. List myapp Applications (envs vs clusters)'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3..."; read -r _
-	$(ARGOCD) app list | grep myapp-
+	$(ARGOCD_CLI_TOOL) app list | grep myapp-
 
 #  delete all myapp applications (apps only), created by single cluster generator
 .PHONY: argocd-delete-all-myapp-apps-created-using-single-cluster-generator

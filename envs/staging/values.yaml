@@ -22,7 +22,7 @@ resources:
 service:
   type: ClusterIP
 ingress:
-  enabled: true
+  enabled: false
   hosts:
     - host: myapp-staging.example.com
       paths:
