@@ -80,9 +80,9 @@ reset-myapp-envs-applications-and-namespaces: ## Delete myapp env Applications, 
 		-n $(ARGOCD_NS) --ignore-not-found
 
 	@echo "Deleting namespaces myapp-dev/staging/prod (if they exist)..."
-	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) delete ns myapp-dev --ignore-not-found
-	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) delete ns myapp-staging --ignore-not-found
-	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) delete ns myapp-prod --ignore-not-found
+	-$(KUBECTL) delete ns myapp-dev --ignore-not-found
+	-$(KUBECTL) delete ns myapp-staging --ignore-not-found
+	-$(KUBECTL) delete ns myapp-prod --ignore-not-found
 
 # Verify reset (optional sanity check)
 .PHONY: verify-reset-myapp-envs-applications-and-namespaces
@@ -91,9 +91,9 @@ verify-reset-myapp-envs-applications-and-namespaces:
 	-$(ARGOCD) app get myapp-dev && echo "myapp-dev still exists" || echo "myapp-dev removed"
 	-$(ARGOCD) app get myapp-staging && echo "myapp-staging still exists" || echo "myapp-staging removed"
 	-$(ARGOCD) app get myapp-prod && echo "myapp-prod still exists" || echo "myapp-prod removed"
-	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) get ns myapp-dev && echo "ns/myapp-dev still exists" || echo "ns/myapp-dev removed"
-	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) get ns myapp-staging && echo "ns/myapp-staging still exists" || echo "ns/myapp-staging removed"
-	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) get ns myapp-prod && echo "ns/myapp-prod still exists" || echo "ns/myapp-prod removed"
+	-$(KUBECTL) get ns myapp-dev && echo "ns/myapp-dev still exists" || echo "ns/myapp-dev removed"
+	-$(KUBECTL) get ns myapp-staging && echo "ns/myapp-staging still exists" || echo "ns/myapp-staging removed"
+	-$(KUBECTL) get ns myapp-prod && echo "ns/myapp-prod still exists" || echo "ns/myapp-prod removed"
 
 .PHONY: check-myapp-envs-applicationset-and-apps-exist
 check-myapp-envs-applicationset-and-apps-exist:
@@ -178,28 +178,141 @@ argocd-sync-and-wait-myapp-prod: ## Sync myapp-prod and wait for Healthy+Synced
 		  $(ARGOCD_CLI_TOOL) app get myapp-prod; \
 		  exit 1 )
 
+# ---------------------------------------------------------------------------------------------------------
+#							Multi Clusters - Multiple environment (dev/staging/prod)
+#	For a true multi-cluster per environment setup, you want three separate ArgoCD cluster entries 
+#	(and secrets) with fixed environment labels:
+# 		- dev-cluster → environment=dev
+# 		- staging-cluster → environment=staging
+# 		- prod-cluster → environment=prod
+#
+# 	Your existing myapp-clusters ApplicationSet will then generate one Application per cluster 
+#	(myapp-dev-cluster, myapp-staging-cluster, myapp-prod-cluster) automatically.
+#
+#	How to set that up and wire it into Make.
+# 1. Register three clusters with ArgoCD
+# 	You can add clusters via CLI using argocd cluster add and your kubeconfigs. Assuming you have three kubeconfig contexts:
+# 		- k8s-dev
+# 		- k8s-staging
+# 		- k8s-prod
+# 	register them
+#  Ex: # Dev cluster
+#		argocd cluster add k8s-dev --name dev-cluster
+# 	You should see dev-cluster, staging-cluster, prod-cluster.
+#
+# 2. Label each cluster secret with a fixed environment
+#   Now set environment labels (and ensure secret-type=cluster) on each secret
+#  Ex: # Dev cluster secret
+#		kubectl label secret dev-cluster \
+#			  -n argocd argocd.argoproj.io/secret-type=cluster environment=dev --overwrite
+#
+# 3. What Applications the myapp-clusters ApplicationSet will generate
+#	With:
+# 		- Cluster secrets: dev-cluster, staging-cluster, prod-cluster.
+#		- Labels: environment=dev/staging/prod.
+#
+#
+# 	This will generate:
+# 	1. For dev-cluster:
+# 			Name: myapp-dev-cluster.
+# 			Dest: server=<dev cluster API>, namespace=myapp-dev.
+# 			Values: $values/envs/dev/values.yaml (your dev values).
+# 	2. For staging-cluster:
+# 			Name: myapp-staging-cluster.
+# 			Dest: server=<staging cluster API>, namespace=myapp-staging.
+# 			Values: $values/envs/staging/values.yaml (once you add staging values).
+# 	3. For prod-cluster:
+# 			Name: myapp-prod-cluster.
+# 			Dest: server=<prod cluster API>, namespace=myapp-prod.
+# 			Values: $values/envs/prod/values.yaml.
+# 	This is the “true multi-cluster per environment” pattern: each env has its own physical/remote cluster.
+# ---------------------------------------------------------------------------------------------------------
 
-#  delete all myapp applications (apps only)
-.PHONY: argocd-delete-all-myapp-apps-created-using-git-generator
-argocd-delete-all-myapp-apps-created-using-git-generator: ## Delete all ArgoCD applications whose name starts with myapp- and created by Git generator
+#1. To register three clusters (idempotent)
+# Helper: register one cluster only if it's not already present
+
+define REGISTER_CLUSTER_IF_NEEDED
+if ! $(ARGOCD_CLI_TOOL) cluster list | awk '{print $$2}' | grep -qx $(2); then \
+	$(ARGOCD_CLI_TOOL) cluster add $(1) --name $(2); \
+else \
+	echo "Cluster '$(2)' already registered in ArgoCD, skipping."; \
+fi
+endef
+
+# This does:
+# 	- dev-cluster → registered from minikube context (dev = minikube).
+# 	- staging-cluster → registered from k8s-learning context.
+# 	- prod-cluster → also registered from k8s-learning context.
+#
+.PHONY: register-dev-staging-prod-clusters-in-argocd
+register-dev-staging-prod-clusters-in-argocd: ## Register dev, staging, prod clusters in ArgoCD (if not already)
+	$(call REGISTER_CLUSTER_IF_NEEDED,minikube,dev-cluster)
+	$(call REGISTER_CLUSTER_IF_NEEDED,k8s-learning,staging-cluster)
+	$(call REGISTER_CLUSTER_IF_NEEDED,k8s-learning,prod-cluster)
+
+#2. Label each cluster once (fixed env mapping)
+.PHONY: label-dev-cluster-for-myapp
+label-dev-cluster-for-myapp: ## Label dev-cluster as environment=dev for myapp cluster generator
+	kubectl label secret dev-cluster \
+		-n $(ARGOCD_NAMESPACE) argocd.argoproj.io/secret-type=cluster environment=dev --overwrite
+
+.PHONY: label-staging-cluster-for-myapp
+label-staging-cluster-for-myapp: ## Label staging-cluster as environment=staging for myapp cluster generator
+	kubectl label secret staging-cluster \
+		-n $(ARGOCD_NAMESPACE) argocd.argoproj.io/secret-type=cluster environment=staging --overwrite
+
+.PHONY: label-prod-cluster-for-myapp
+label-prod-cluster-for-myapp: ## Label prod-cluster as environment=prod for myapp cluster generator
+	kubectl label secret prod-cluster \
+		-n $(ARGOCD_NAMESPACE) argocd.argoproj.io/secret-type=cluster environment=prod --overwrite
+
+#3.  Apply myapp-clusters ApplicationSet to argocd namespace in multi clusters 
+.PHONY: k8s-apply-myapp-multi-clusters-applicationset-to-cluster
+k8s-apply-myapp-multi-clusters-applicationset-to-cluster: ## Apply myapp-clusters ApplicationSet to argocd namespace in multi clusters 
+	kubectl apply -f applicationsets/myapp-clusters.yaml -n $(ARGOCD_NAMESPACE)
+
+#4. Sync + wait each multi-cluster app
+.PHONY: argocd-sync-and-wait-myapp-dev-cluster
+argocd-sync-and-wait-myapp-dev-cluster: ## Sync myapp-dev-cluster and wait for Synced+Healthy
+	@$(ARGOCD_CLI_TOOL) app sync myapp-dev-cluster
+	@$(ARGOCD_CLI_TOOL) app wait myapp-dev-cluster --sync --health --timeout 300
+
+.PHONY: argocd-sync-and-wait-myapp-staging-cluster
+argocd-sync-and-wait-myapp-staging-cluster: ## Sync myapp-staging-cluster and wait for Synced+Healthy
+	@$(ARGOCD_CLI_TOOL) app sync myapp-staging-cluster
+	@$(ARGOCD_CLI_TOOL) app wait myapp-staging-cluster --sync --health --timeout 300
+
+.PHONY: argocd-sync-and-wait-myapp-prod-cluster
+argocd-sync-and-wait-myapp-prod-cluster: ## Sync myapp-prod-cluster and wait for Synced+Healthy
+	@$(ARGOCD_CLI_TOOL) app sync myapp-prod-cluster
+	@$(ARGOCD_CLI_TOOL) app wait myapp-prod-cluster --sync --health --timeout 300
+
+# Add a “sync all” convenience target
+.PHONY: argocd-sync-and-wait-myapp-all-clusters
+argocd-sync-and-wait-myapp-all-clusters: ## Sync+wait myapp across dev/staging/prod clusters
+	@$(ARGOCD_CLI_TOOL) app sync myapp-dev-cluster myapp-staging-cluster myapp-prod-cluster
+	@$(ARGOCD_CLI_TOOL) app wait myapp-dev-cluster myapp-staging-cluster myapp-prod-cluster --sync --health --timeout 600
+
+#  delete all myapp applications (apps only) , created by multi clusters generator
+.PHONY: argocd-delete-all-myapp-apps-created-using-multi-clusters-generator
+argocd-delete-all-myapp-apps-created-using-multi-clusters-generator: ## Delete all ArgoCD applications whose name starts with myapp- and created by multi clusters generator
+	@echo "Deleting ArgoCD applications: myapp-dev, myapp-staging, myapp-prod, myapp-in-cluster, myapp-dev-cluster, myapp-staging-cluster, myapp-prod-cluster (if they exist)..."
 	@printf '$(CYAN) %s $(RESET) \n' \
 		' Deleting ArgoCD applications, ' \
-		' Created by Makefile_Setup_ArgoCD_ApplicationSets_Using_Git_Generator:' \
-		' myapp-dev, myapp-staging, myapp-prod (if they exist)...';
-	@$(ARGOCD_CLI_TOOL) app delete myapp-dev --yes || true
-	@$(ARGOCD_CLI_TOOL) app delete myapp-staging --yes || true
-	@$(ARGOCD_CLI_TOOL) app delete myapp-prod --yes || true
+		' Created by Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator:' \
+		' myapp-dev-cluster, myapp-staging-cluster, myapp-prod-cluster (if they exist)...';
+	@$(ARGOCD_CLI_TOOL) app delete myapp-dev-cluster --yes || true
+	@$(ARGOCD_CLI_TOOL) app delete myapp-staging-cluster --yes || true
+	@$(ARGOCD_CLI_TOOL) app delete myapp-prod-cluster --yes || true
 
 	@printf '$(CYAN) %s $(RESET) \n' \
 		' Current myapp apps after deletion: ';
 	@$(ARGOCD_CLI_TOOL) app list | grep myapp- || echo "No myapp-* apps remain."
 
-# Delete the myapp ApplicationSets
-.PHONY: argocd-delete-all-myapp-applicationsets-using-git-generator
-argocd-delete-all-myapp-applicationsets-using-git-generator: ## Delete myapp-related ApplicationSets created by git generator
+.PHONY: argocd-delete-all-myapp-applicationsets-using-multi-clusters-generator
+argocd-delete-all-myapp-applicationsets-using-multi-clusters-generator: ## Delete myapp-related ApplicationSets created by multi-cluster
 	@printf '$(CYAN) %s $(RESET) \n' \
 		' Deleting ArgoCD ApplicationSets:, ' \
 		' Created by Makefile_Setup_ArgoCD_ApplicationSets_Using_Git_Generator:' \
-		' myapp-envs(if they exist)...';	
-	@kubectl delete applicationset myapp-envs -n $(ARGOCD_NAMESPACE) --ignore-not-found
-
+		' myapp-clusters (if they exist)...';
+	@kubectl delete applicationset myapp-clusters -n $(ARGOCD_NAMESPACE) --ignore-not-found

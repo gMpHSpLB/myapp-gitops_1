@@ -80,6 +80,9 @@ setup-argocd: ##
 	$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-apply-argocd-oci-helm-lab-repo-secret
 	$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering register-public-helm-oci-repo-as-source-for-helm-chart-with-argocd
 
+# ------------------------------------------------------------------------------------------------------------
+# 												Git Generator - Directories
+# ------------------------------------------------------------------------------------------------------------
 .PHONY: create-argocd-myapp-envs-applicationset-and-status-check
 create-argocd-myapp-envs-applicationset-and-status-check: ## Create ApplicationSet for myapp envs and check status
 	@printf '$(CYAN) %s $(RESET) \n' \
@@ -145,6 +148,64 @@ create-argocd-myapp-envs-applicationset-and-status-check: ## Create ApplicationS
 	read -r _
 	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Git_Generator argocd-see-diff-of-myapp-envs-applications
 
+# ------------------------------------------------------------------------------------------------------------
+# 												Single Cluster
+# ------------------------------------------------------------------------------------------------------------
+.PHONY: create-argocd-myapp-single-cluster-envs-applicationset-and-status-check
+create-argocd-myapp-single-cluster-envs-applicationset-and-status-check: ## Single cluster myapp via cluster generator
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Single_Cluster_Generator test-myapp-cluster-generator-as-dev
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Single_Cluster_Generator test-myapp-cluster-generator-as-staging
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Single_Cluster_Generator test-myapp-cluster-generator-as-prod	
+
+# ------------------------------------------------------------------------------------------------------------
+# 												Multi Clusters
+# ------------------------------------------------------------------------------------------------------------
+.PHONY: create-argocd-myapp-multi-clusters-envs-applicationset-and-status-check
+create-argocd-myapp-multi-clusters-envs-applicationset-and-status-check: ## Register env clusters, label them, apply myapp-clusters, sync+wait dev/staging/prod
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 0. Register dev/staging/prod clusters in ArgoCD (if needed)'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 0..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator register-dev-staging-prod-clusters-in-argocd
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 1. Label dev/staging/prod cluster secrets with environment=dev/staging/prod'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 1..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator label-dev-cluster-for-myapp
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator label-staging-cluster-for-myapp
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator label-prod-cluster-for-myapp
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 2. Apply myapp-clusters ApplicationSet to argocd namespace'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 2..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator k8s-apply-myapp-clusters-applicationset-to-cluster
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 3. Sync myapp-dev-cluster and wait for Synced+Healthy'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator argocd-sync-and-wait-myapp-dev-cluster
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 4. Sync myapp-staging-cluster and wait for Synced+Healthy'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 4..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator argocd-sync-and-wait-myapp-staging-cluster
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 5. Sync myapp-prod-cluster and wait for Synced+Healthy'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 5..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator argocd-sync-and-wait-myapp-prod-cluster
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 6. List all myapp cluster apps'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 6..."; read -r _
+	$(ARGOCD_CLI_TOOL) app list | grep myapp-
+
+
+.PHONY: cleanup-myapp-argocd-lab
+cleanup-myapp-argocd-lab: ## Clean all myapp ArgoCD apps + ApplicationSets
+	@printf '$(RED) %s $(RESET) \n' 'WARNING: This will delete all myapp-* ArgoCD apps and their resources (cascade).'; \
+	printf '$(RED) %s $(RESET) \n' "Press ENTER to continue, or Ctrl+C to abort..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Git_Generator argocd-delete-all-myapp-apps-created-using-git-generator
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Single_Cluster_Generator argocd-delete-all-myapp-apps-created-using-single-cluster-generator
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator argocd-delete-all-myapp-apps-created-using-multi-clusters-generator	
+
+	@printf '$(RED) %s $(RESET) \n' 'WARNING: This will delete all myapp-* ArgoCD appsets and their resources (cascade).'; \
+	printf '$(RED) %s $(RESET) \n' "Press ENTER to continue, or Ctrl+C to abort..."; read -r _
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Git_Generator argocd-delete-all-myapp-applicationsets-using-git-generator
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Single_Cluster_Generator argocd-delete-all-myapp-applicationsets-using-single-cluster-generator
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator argocd-delete-all-myapp-applicationsets-using-multi-clusters-generator
 
 # Example: safe usage pattern
 # Start from a clean shell.

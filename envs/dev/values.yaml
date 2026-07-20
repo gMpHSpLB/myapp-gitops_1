@@ -21,7 +21,7 @@ resources:
     cpu: "200m"
 service:
   type: NodePort
-  nodePort: 30080
+  nodePort: 30081
 probes:
   readiness:
     path: /ready
