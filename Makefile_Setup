@@ -26,7 +26,8 @@ help: ## Show all available targets with short descriptions.
 # Default minikube profile name.
 # A profile is like a named cluster configuration stored by minikube.
 # Use this if you want multiple local clusters on the same machine.
-MINIKUBE_PROFILE ?= k8s-learning
+#MINIKUBE_PROFILE ?= k8s-learning
+MINIKUBE_PROFILE ?= minikube
 
 # Docker driver means minikube runs Kubernetes inside a Docker container.
 # Best for WSL2 + Docker Desktop setups like yours.
@@ -113,4 +114,20 @@ enable-minikube-addons: ## enable ingress and metrics-server
 install-helm-3-18:
 	bash ./install_helm_3_18.sh
 	helm version
+
+# ----------------------------------------------------------------------------------------------
+#                                Multi Clusters using Kind
+# ----------------------------------------------------------------------------------------------
+.PHONY : create-all-clusters
+create-all-clusters-using-kind:
+	@printf '$(CYAN) %s $(RESET) \n' \
+	       'Inside WSL (Ubuntu), create three Kubernetes clusters using kind: '\
+		   ' 	1. dev ' \
+		   ' 	2. staging ' \
+		   ' 	3. prod ' ;\
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to continue..."; \
+	read -r _
+	$(MAKE) -f Makefile_Kind_Clusters kind-create-all-clusters
+	$(MAKE) -f Makefile_Kind_Clusters kind-get-clusters
+
 

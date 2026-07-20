@@ -180,6 +180,7 @@ argocd-sync-and-wait-myapp-prod: ## Sync myapp-prod and wait for Healthy+Synced
 
 # ---------------------------------------------------------------------------------------------------------
 #							Single Cluster - Multiple environment (dev/staging/prod)
+#							“single cluster env switch” context"
 # Note: This is not “cluster for each environment”; it’s “one cluster, mutable environment label for testing.”
 # Cluster Name: in-cluster
 #
@@ -215,11 +216,16 @@ k8s-apply-myapp-clusters-applicationset-to-cluster: ## Apply myapp-clusters Appl
 	@echo "Apply myapp-clusters ApplicationSet to argocd namespace"
 	kubectl apply -f applicationsets/myapp-clusters.yaml -n $(ARGOCD_NAMESPACE)
 
+#	Sync with prune when switching envs:
+#		Since your tutorial flips the cluster environment label (dev → staging → prod), 
+#		it is natural that the previous env resources must be pruned on each step; otherwise, 
+#		they sit as “requires pruning” and keep apps OutOfSync.
+#
 .PHONY: argocd-sync-and-wait-myapp-in-cluster
 argocd-sync-and-wait-myapp-in-cluster: ## Sync myapp-in-cluster and wait for Synced+Healthy
 	@echo "Syncing myapp-in-cluster and wait for Synced+Healthy..."
-	@$(ARGOCD_CLI_TOOL) app sync myapp-in-cluster || true
-	@$(ARGOCD_CLI_TOOL) app wait myapp-in-cluster --sync --health --timeout 300 || true
+	@$(ARGOCD_CLI_TOOL) app sync myapp-in-cluster --prune --grpc-web || true
+	@$(ARGOCD_CLI_TOOL) app wait myapp-in-cluster --sync --health --timeout 300 --prune --grpc-web || true
 
 #
 # This fulfills your three goals:

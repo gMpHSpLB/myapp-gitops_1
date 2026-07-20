@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: myapp-clusters
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+
+  # use a selector that matches any cluster with the environment 
+  # label and type cluster. The Cluster generator supports label 
+  # selectors; with goTemplate you can still read metadata.labels.environment
+  generators:
+  - clusters:
+      selector:
+        matchExpressions:
+          - key: argocd.argoproj.io/secret-type
+            operator: In
+            values: ["cluster"]
+          - key: environment
+            operator: In
+            values:
+              - dev
+              - staging
+              - prod
+      values:
+        environment: "{{.metadata.labels.environment}}"
+  template:
+    metadata:
+      name: "myapp-{{.name}}"   # e.g. myapp-in-cluster
+    spec:
+      project: myapp-team
+      sources:
+        # Source 1: OCI Helm chart
+        - repoURL: ghcr.io/gmphsplb/helm-lab
+          chart: myapp
+          targetRevision: "1.0.0"
+          helm:
+            valueFiles:
+              - "$values/envs/{{.values.environment}}/values.yaml"
+
+        # Source 2: GitOps repo providing $values
+        - repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
+          targetRevision: main
+          ref: values
+
+      destination:
+        server: "{{.server}}"                    # the cluster’s API server, e.g. https://kubernetes.default.svc
+        namespace: "myapp-{{.values.environment}}"  # e.g. myapp-dev, myapp-prod
+
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true

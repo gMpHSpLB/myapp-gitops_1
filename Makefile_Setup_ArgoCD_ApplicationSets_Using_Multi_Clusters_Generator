@@ -54,7 +54,7 @@ K8S_NAMESPACE_PROD						?= myapp-prod
 KUBECONFIG ?= ~/.kube/config
 KUBECTL    ?= kubectl
 ARGOCD     ?= argocd
-ARGOCD_NS  ?= argocd
+ARGOCD_NAMESPACE  ?= argocd
 
 .PHONY: apply-staging-secret
 apply-staging-secret: ## Apply Secret for STAGING environment
@@ -71,13 +71,13 @@ apply-prod-secret: ## Apply Secret for PROD environment
 .PHONY: reset-myapp-envs-applications-and-namespaces
 reset-myapp-envs-applications-and-namespaces: ## Delete myapp env Applications, ApplicationSet, and namespaces
 	@echo "Deleting myapp-dev/staging/prod Applications (if they exist)..."
-	-$(ARGOCD) app delete myapp-dev --cascade --yes || true
-	-$(ARGOCD) app delete myapp-staging --cascade --yes || true
-	-$(ARGOCD) app delete myapp-prod --cascade --yes || true
+	-$(ARGOCD_CLI_TOOL) app delete myapp-dev --cascade --yes || true
+	-$(ARGOCD_CLI_TOOL) app delete myapp-staging --cascade --yes || true
+	-$(ARGOCD_CLI_TOOL) app delete myapp-prod --cascade --yes || true
 
 	@echo "Deleting myapp-environments ApplicationSet (if it exists)..."
 	-$(KUBECTL) --kubeconfig=$(KUBECONFIG) delete applicationset myapp-environments \
-		-n $(ARGOCD_NS) --ignore-not-found
+		-n $(ARGOCD_NAMESPACE) --ignore-not-found
 
 	@echo "Deleting namespaces myapp-dev/staging/prod (if they exist)..."
 	-$(KUBECTL) delete ns myapp-dev --ignore-not-found
@@ -88,9 +88,9 @@ reset-myapp-envs-applications-and-namespaces: ## Delete myapp env Applications, 
 .PHONY: verify-reset-myapp-envs-applications-and-namespaces
 verify-reset-myapp-envs-applications-and-namespaces:
 	@echo "Verifying myapp env Applications and namespaces are gone..."
-	-$(ARGOCD) app get myapp-dev && echo "myapp-dev still exists" || echo "myapp-dev removed"
-	-$(ARGOCD) app get myapp-staging && echo "myapp-staging still exists" || echo "myapp-staging removed"
-	-$(ARGOCD) app get myapp-prod && echo "myapp-prod still exists" || echo "myapp-prod removed"
+	-$(ARGOCD_CLI_TOOL) app get myapp-dev && echo "myapp-dev still exists" || echo "myapp-dev removed"
+	-$(ARGOCD_CLI_TOOL) app get myapp-staging && echo "myapp-staging still exists" || echo "myapp-staging removed"
+	-$(ARGOCD_CLI_TOOL) app get myapp-prod && echo "myapp-prod still exists" || echo "myapp-prod removed"
 	-$(KUBECTL) get ns myapp-dev && echo "ns/myapp-dev still exists" || echo "ns/myapp-dev removed"
 	-$(KUBECTL) get ns myapp-staging && echo "ns/myapp-staging still exists" || echo "ns/myapp-staging removed"
 	-$(KUBECTL) get ns myapp-prod && echo "ns/myapp-prod still exists" || echo "ns/myapp-prod removed"
@@ -98,12 +98,12 @@ verify-reset-myapp-envs-applications-and-namespaces:
 .PHONY: check-myapp-envs-applicationset-and-apps-exist
 check-myapp-envs-applicationset-and-apps-exist:
 	@echo "Checking existing ApplicationSet and Applications..."
-	-$(KUBECTL) get applicationset myapp-environments -n $(ARGOCD_NS) \
+	-$(KUBECTL) get applicationset myapp-environments -n $(ARGOCD_NAMESPACE) \
 		&& echo "ApplicationSet myapp-environments exists" \
 		|| echo "ApplicationSet myapp-environments not found"
-	-$(ARGOCD) app get myapp-dev && echo "myapp-dev exists" || echo "myapp-dev not found"
-	-$(ARGOCD) app get myapp-staging && echo "myapp-staging exists" || echo "myapp-staging not found"
-	-$(ARGOCD) app get myapp-prod && echo "myapp-prod exists" || echo "myapp-prod not found"
+	-$(ARGOCD_CLI_TOOL) app get myapp-dev && echo "myapp-dev exists" || echo "myapp-dev not found"
+	-$(ARGOCD_CLI_TOOL) app get myapp-staging && echo "myapp-staging exists" || echo "myapp-staging not found"
+	-$(ARGOCD_CLI_TOOL) app get myapp-prod && echo "myapp-prod exists" || echo "myapp-prod not found"
 
 # Apply the ApplicationSet that generates myapp-dev/staging/prod
 .PHONY: k8s-apply-myapp-envs-applicationset-to-cluster
@@ -228,9 +228,45 @@ argocd-sync-and-wait-myapp-prod: ## Sync myapp-prod and wait for Healthy+Synced
 # 	This is the “true multi-cluster per environment” pattern: each env has its own physical/remote cluster.
 # ---------------------------------------------------------------------------------------------------------
 
+# just ensure kubecontext is kind-dev before running any target
+.PHONY: kind-use-dev-context
+kind-use-dev-context: ## Switch kubectl context to kind-dev
+	@kubectl config use-context kind-dev
+
+.PHONY: kind-use-staging-context
+kind-use-staging-context: ## Switch kubectl context to kind-staging
+	@kubectl config use-context kind-staging
+
+.PHONY: kind-use-prod-context
+kind-use-prod-context: ## Switch kubectl context to kind-prod
+	@kubectl config use-context kind-prod
+
+# for Argo CD bootstrap on the dev cluster, you can wrap your existing install logic
+.PHONY: install-argocd-on-dev
+install-argocd-on-dev: kind-use-dev-context ## Install Argo CD on dev (hub) cluster
+	@echo "Installing Argo CD on kind-dev cluster..."
+	@$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator install-argocd-on-kind-dev
+
+.PHONY: install-argocd-on-kind-dev
+install-argocd-on-kind-dev:
+	@printf '$(YELLOW) %s $(RESET) \n' \
+		'Check ArgoCD Server is already installed?'
+	@if kubectl get deploy argocd-server -n $(K8S_ARGOCD_NAMESPACE) >/dev/null 2>&1; then \
+		printf '$(GREEN) %s $(RESET) \n' \
+			'ArgoCD is already installed and running. Skipping install, but verify status'; \
+		$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-argocd-verify; \
+	else \
+		$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-argocd-install; \
+		$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-argocd-verify; \
+	fi
+
 #1. To register three clusters (idempotent)
 # Helper: register one cluster only if it's not already present
-
+#	kind create cluster --name dev creates a kubeconfig context named kind-dev.
+#		argocd cluster add kind-dev --name dev-cluster tells Argo CD:
+#			Use the credentials from the kind-dev context in ~/.kube/config.
+# 	Create a cluster secret named dev-cluster in argocd namespace.
+#
 define REGISTER_CLUSTER_IF_NEEDED
 if ! $(ARGOCD_CLI_TOOL) cluster list | awk '{print $$2}' | grep -qx $(2); then \
 	$(ARGOCD_CLI_TOOL) cluster add $(1) --name $(2); \
@@ -246,9 +282,9 @@ endef
 #
 .PHONY: register-dev-staging-prod-clusters-in-argocd
 register-dev-staging-prod-clusters-in-argocd: ## Register dev, staging, prod clusters in ArgoCD (if not already)
-	$(call REGISTER_CLUSTER_IF_NEEDED,minikube,dev-cluster)
-	$(call REGISTER_CLUSTER_IF_NEEDED,k8s-learning,staging-cluster)
-	$(call REGISTER_CLUSTER_IF_NEEDED,k8s-learning,prod-cluster)
+    $(call REGISTER_CLUSTER_IF_NEEDED,kind-dev,dev-cluster)
+    $(call REGISTER_CLUSTER_IF_NEEDED,kind-staging,staging-cluster)
+    $(call REGISTER_CLUSTER_IF_NEEDED,kind-prod,prod-cluster)
 
 #2. Label each cluster once (fixed env mapping)
 .PHONY: label-dev-cluster-for-myapp
@@ -269,7 +305,7 @@ label-prod-cluster-for-myapp: ## Label prod-cluster as environment=prod for myap
 #3.  Apply myapp-clusters ApplicationSet to argocd namespace in multi clusters 
 .PHONY: k8s-apply-myapp-multi-clusters-applicationset-to-cluster
 k8s-apply-myapp-multi-clusters-applicationset-to-cluster: ## Apply myapp-clusters ApplicationSet to argocd namespace in multi clusters 
-	kubectl apply -f applicationsets/myapp-clusters.yaml -n $(ARGOCD_NAMESPACE)
+	kubectl apply -f applicationsets/myapp-multi-clusters.yaml -n $(ARGOCD_NAMESPACE)
 
 #4. Sync + wait each multi-cluster app
 .PHONY: argocd-sync-and-wait-myapp-dev-cluster

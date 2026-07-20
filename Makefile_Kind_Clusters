@@ -1,0 +1,55 @@
+# Use bash for nicer && / set -e handling
+SHELL := /bin/bash
+
+# Default target
+.DEFAULT_GOAL := help
+
+# Self-documenting help: list targets with "##" comments
+help: ## Show all available targets with short descriptions.
+	# This target reads the Makefile and prints any line ending with ##.
+	# Use this when you want to discover available commands quickly.
+	# Expected output: a list of targets and one-line descriptions.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+# ---------- GLOBAL CONFIG --------------------------------------
+KIND ?= kind
+
+.PHONY: kind-create-all-clusters
+kind-create-all-clusters: kind-create-dev-cluster kind-create-staging-cluster kind-create-prod-cluster ## Create dev, staging, prod kind clusters
+
+.PHONY: kind-delete-all-clusters
+kind-delete-all-clusters: kind-delete-dev-cluster kind-delete-staging-cluster kind-delete-prod-cluster ## Delete dev, staging, prod kind clusters
+
+.PHONY: kind-create-dev-cluster
+kind-create-dev-cluster: ## Create dev kind cluster
+	@echo "Creating kind cluster 'dev'..."
+	@$(KIND) get clusters | grep -qx dev || $(KIND) create cluster --name dev
+
+.PHONY: kind-create-staging-cluster
+kind-create-staging-cluster: ## Create staging kind cluster
+	@echo "Creating kind cluster 'staging'..."
+	@$(KIND) get clusters | grep -qx staging || $(KIND) create cluster --name staging
+
+.PHONY: kind-create-prod-cluster
+kind-create-prod-cluster: ## Create prod kind cluster
+	@echo "Creating kind cluster 'prod'..."
+	@$(KIND) get clusters | grep -qx prod || $(KIND) create cluster --name prod
+
+.PHONY: kind-delete-dev-cluster
+kind-delete-dev-cluster: ## Delete dev kind cluster
+	@echo "Deleting kind cluster 'dev'..."
+	@$(KIND) get clusters | grep -qx dev && $(KIND) delete cluster --name dev || true
+
+.PHONY: kind-delete-staging-cluster
+kind-delete-staging-cluster: ## Delete staging kind cluster
+	@echo "Deleting kind cluster 'staging'..."
+	@$(KIND) get clusters | grep -qx staging && $(KIND) delete cluster --name staging || true
+
+.PHONY: kind-delete-prod-cluster
+kind-delete-prod-cluster: ## Delete prod kind cluster
+	@echo "Deleting kind cluster 'prod'..."
+	@$(KIND) get clusters | grep -qx prod && $(KIND) delete cluster --name prod || true
+
+.PHONY: kind-get-clusters
+kind-get-clusters: ## List kind clusters
+	@$(KIND) get clusters || true
