@@ -28,7 +28,7 @@ ARGOCD_CLI_TOOL 						?= bin/argocd
 
 
 # Set ARGOCD_SERVER to the service, not localhost
-ARGOCD_PORT 							?= 8080
+ARGOCD_PORT 							?= 8082
 ARGOCD_SERVER_URL						?= localhost:$(ARGOCD_PORT)
 ARGOCD_USERNAME 						?= admin
 ARGOCD_ADMIN_PASSWORD					?= admin123
@@ -243,15 +243,38 @@ kind-use-prod-context: ## Switch kubectl context to kind-prod
 
 # for Argo CD bootstrap on the dev cluster, you can wrap your existing install logic
 .PHONY: install-argocd-on-dev
-install-argocd-on-dev: kind-use-dev-context ## Install Argo CD on dev (hub) cluster
+install-argocd-on-dev: ## Install Argo CD on dev (hub) cluster
 	@echo "Installing Argo CD on kind-dev cluster..."
 	@$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator install-argocd-on-kind-dev
 
+argocd-create-namespace:
+	@printf '$(YELLOW) %s $(RESET) \n' \
+		'Ensuring ArgoCD namespace exists: $(ARGOCD_NAMESPACE)'
+	@kubectl create namespace $(ARGOCD_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+
+.PHONY: kind-dev-check-argocd-installed
+kind-dev-check-argocd-installed: kind-use-dev-context ## Ensure Argo CD is installed on kind-dev
+	@echo "Current kubectl context:"
+	@kubectl config current-context
+	@echo "Checking argocd namespace on kind-dev..."
+	@if ! kubectl get ns argocd >/dev/null 2>&1; then \
+	  echo "ERROR: 'argocd' namespace not found on kind-dev. Run install-argocd-on-dev first."; \
+	  exit 1; \
+	fi
+	@echo "'argocd' namespace found. Listing Argo CD pods:"
+	@kubectl -n argocd get pods
+
 .PHONY: install-argocd-on-kind-dev
-install-argocd-on-kind-dev:
+install-argocd-on-kind-dev: kind-use-dev-context argocd-create-namespace
+	@printf '$(YELLOW) %s $(RESET) \n' \
+		'See current context?' ; \
+	kubectl config current-context; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to continue..."; \
+	read -r _
+
 	@printf '$(YELLOW) %s $(RESET) \n' \
 		'Check ArgoCD Server is already installed?'
-	@if kubectl get deploy argocd-server -n $(K8S_ARGOCD_NAMESPACE) >/dev/null 2>&1; then \
+	@if kubectl get deploy argocd-server -n $(ARGOCD_NAMESPACE) >/dev/null 2>&1; then \
 		printf '$(GREEN) %s $(RESET) \n' \
 			'ArgoCD is already installed and running. Skipping install, but verify status'; \
 		$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-argocd-verify; \
@@ -267,24 +290,151 @@ install-argocd-on-kind-dev:
 #			Use the credentials from the kind-dev context in ~/.kube/config.
 # 	Create a cluster secret named dev-cluster in argocd namespace.
 #
+# define REGISTER_CLUSTER_IF_NEEDED
+# if ! $(ARGOCD_CLI_TOOL) cluster list | awk '{print $$2}' | grep -qx $(2); then \
+# 	$(ARGOCD_CLI_TOOL) cluster add $(1) --name $(2); \
+# else \
+# 	echo "Cluster '$(2)' already registered in ArgoCD, skipping."; \
+# fi
+# endef
+
+# Path to a kubeconfig ArgoCD should use for dev cluster
+
+# define REGISTER_CLUSTER_IF_NEEDED
+# if ! $(ARGOCD_CLI_TOOL) cluster list | awk '{print $$2}' | grep -qx $(2); then \
+#     $(ARGOCD_CLI_TOOL) cluster add $(1) --name $(2) \
+#       $(if $(filter $(1),kind-dev),--kubeconfig $(KIND_DEV_KUBECONFIG),); \
+# else \
+#     echo "Cluster '$(2)' already registered in ArgoCD, skipping."; \
+# fi
+# endef
+
+# .PHONY: k8s-argocd-check-argocd-server-accessible
+# k8s-argocd-check-argocd-server-accessible: ## Ensure Argo CD server is reachable before CLI login
+# 	@echo "Checking Argo CD server at $(ARGOCD_SERVER_URL)..."
+# 	@curl -sk "https://$(ARGOCD_SERVER_URL)/healthz" >/dev/null 2>&1 || \
+# 	  ( echo "Argo CD server $(ARGOCD_SERVER_URL) not reachable. Is port-forward/Ingress running?"; exit 1 )
+
+.PHONY: k8s-argocd-check-argocd-server-accessible
+k8s-argocd-check-argocd-server-accessible:
+	@printf '$(YELLOW) %s $(RESET)\n' \
+		'Checking whether Argo CD server is reachable on local access port'
+	@if lsof -i :$(ARGOCD_PORT) >/dev/null 2>&1; then \
+		if curl -sk https://127.0.0.1:$(ARGOCD_PORT)/healthz >/dev/null 2>&1; then \
+			printf '$(GREEN) %s $(RESET)\n' \
+				"Argo CD server is reachable on localhost:$(ARGOCD_PORT)"; \
+		else \
+			printf '$(YELLOW) %s $(RESET)\n' \
+				"Port $(ARGOCD_PORT) is open, but Argo CD is not responding. Restarting port-forward."; \
+			$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator k8s-argocd-expose-argocd-server-to-localaccess; \
+		fi; \
+	else \
+		printf '$(YELLOW) %s $(RESET)\n' \
+			"Argo CD server is not reachable on localhost:$(ARGOCD_PORT)"; \
+		$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator k8s-argocd-expose-argocd-server-to-localaccess; \
+	fi
+
+k8s-argocd-expose-argocd-server-to-localaccess: ## Expose argocd server for local access
+	@printf '$(YELLOW) %s $(RESET)\n' \
+		'ArgoCD server is ClusterIP by default — exposing it for local access'
+	@if lsof -i :$(ARGOCD_PORT) >/dev/null 2>&1; then \
+		printf '$(GREEN) %s $(RESET)\n' \
+			"Port $(ARGOCD_PORT) is already in use. Reusing existing port-forward or stop it first."; \
+	else \
+		printf '$(YELLOW) %s $(RESET)\n' 'Starting port-forward in the background'; \
+		kubectl port-forward svc/argocd-server -n $(ARGOCD_NAMESPACE) $(ARGOCD_PORT):443 > $(ARGOCD_PF_LOG) 2>&1 & \
+		echo $$! > $(ARGOCD_PF_PID); \
+		for i in 1 2 3 4 5; do \
+		  sleep 2; \
+		  if curl -sk https://127.0.0.1:$(ARGOCD_PORT)/healthz >/dev/null 2>&1; then \
+		    printf '$(GREEN) %s $(RESET)\n' "Argo CD is now reachable on localhost:$(ARGOCD_PORT)"; \
+		    exit 0; \
+		  fi; \
+		done; \
+		printf '$(RED) %s $(RESET)\n' \
+			"Port-forward started but Argo CD is still not reachable"; \
+		exit 1; \
+	fi
+
+# k8s-argocd-expose-argocd-server-to-localaccess: ## Expose argocd server for local access
+# 	@printf '$(YELLOW) %s $(RESET)\n' \
+# 		'ArgoCD server is ClusterIP by default — exposing it for local access'
+# 	@if lsof -i :$(ARGOCD_PORT) >/dev/null 2>&1; then \
+# 		printf '$(GREEN) %s $(RESET)\n' \
+# 			"Port $(ARGOCD_PORT) is already in use. Reusing existing port-forward or stop it first."; \
+# 	else \
+# 		printf '$(YELLOW) %s $(RESET)\n' 'Starting port-forward in the background'; \
+# 		kubectl port-forward svc/argocd-server -n $(ARGOCD_NAMESPACE) $(ARGOCD_PORT):443 > $(ARGOCD_PF_LOG) 2>&1 & \
+# 		echo $$! > $(ARGOCD_PF_PID); \
+# 		sleep 3; \
+# 		if curl -sk https://127.0.0.1:$(ARGOCD_PORT)/healthz >/dev/null 2>&1; then \
+# 			printf '$(GREEN) %s $(RESET)\n' \
+# 				"Argo CD is now reachable on localhost:$(ARGOCD_PORT)"; \
+# 		else \
+# 			printf '$(RED) %s $(RESET)\n' \
+# 				"Port-forward started but Argo CD is still not reachable"; \
+# 			exit 1; \
+# 		fi; \
+# 	fi
+
+k8s-argocd-get-initial-admin-password:
+	@printf '$(YELLOW) %s $(RESET)\n' \
+		'Get the initial admin password' \
+		'It is stored in a Secret and auto-generated during install'; \
+
+	@INITIAL_PASS="$$(kubectl get secret argocd-initial-admin-secret \
+		-n $(ARGOCD_NAMESPACE) \
+		-o jsonpath='{.data.password}' | base64 --decode)"; \
+	printf '$(GREEN) %s %s $(RESET)\n' 'Admin Initial password:' "$$INITIAL_PASS"; \
+	if [ -z "$$INITIAL_PASS" ]; then \
+		printf '$(GREEN)%s$(RESET)\n' "Initial admin password secret not found or empty; assuming password was already changed."; \
+		exit 0; \
+	else \
+		printf '$(GREEN) %s %s $(RESET)\n' 'Admin password:' "$$INITIAL_PASS";\
+	fi
+
+.PHONY: argocd-login-argocd-server-via-cli
+argocd-login-argocd-server-via-cli: kind-use-dev-context k8s-argocd-check-argocd-server-accessible ## Login to Argo CD via CLI using admin password or initial secret
+	@echo "Logging in to Argo CD at $(ARGOCD_SERVER_URL) as $(ARGOCD_USERNAME)..."
+	@PASS="$${ARGOCD_ADMIN_PASSWORD:-$$($(KUBECTL) -n $(ARGOCD_NAMESPACE) get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo)}"; \
+	printf '$(GREEN) %s %s $(RESET)\n' 'Admin password:' "$$PASS";\
+	$(ARGOCD_CLI_TOOL) login $(ARGOCD_SERVER_URL) \
+		--username $(ARGOCD_USERNAME) \
+		--password "$$PASS" \
+		$(if $(ARGOCD_INSECURE),--insecure,)
+
+# Optional: where to store exported kubeconfigs
+KIND_KUBECONFIG_DIR := tmp/kubeconfigs
+
+.PHONY: prepare-kind-kubeconfig-dir
+prepare-kind-kubeconfig-dir:
+	mkdir -p $(KIND_KUBECONFIG_DIR)
+
+# Export per-context kubeconfigs without rewriting the server field
+.PHONY: export-kind-kubeconfigs
+export-kind-kubeconfigs: prepare-kind-kubeconfig-dir
+	@for ctx in kind-dev kind-staging kind-prod; do \
+		echo "Exporting kubeconfig for $$ctx..."; \
+		kubectl config use-context $$ctx >/dev/null; \
+		kubectl config view --raw --minify --context $$ctx > $(KIND_KUBECONFIG_DIR)/$$ctx-kubeconfig.yaml; \
+	done
+
+# Helper function: register a cluster in Argo CD if it is not present
 define REGISTER_CLUSTER_IF_NEEDED
-if ! $(ARGOCD_CLI_TOOL) cluster list | awk '{print $$2}' | grep -qx $(2); then \
+@if ! $(ARGOCD_CLI_TOOL) cluster list | awk 'NR>1 {print $$2}' | grep -qx $(2); then \
+	echo "Registering cluster '$(2)' from context '$(1)'..."; \
 	$(ARGOCD_CLI_TOOL) cluster add $(1) --name $(2); \
 else \
-	echo "Cluster '$(2)' already registered in ArgoCD, skipping."; \
+	echo "Cluster '$(2)' already registered in Argo CD, skipping."; \
 fi
 endef
 
-# This does:
-# 	- dev-cluster → registered from minikube context (dev = minikube).
-# 	- staging-cluster → registered from k8s-learning context.
-# 	- prod-cluster → also registered from k8s-learning context.
-#
 .PHONY: register-dev-staging-prod-clusters-in-argocd
-register-dev-staging-prod-clusters-in-argocd: ## Register dev, staging, prod clusters in ArgoCD (if not already)
-    $(call REGISTER_CLUSTER_IF_NEEDED,kind-dev,dev-cluster)
-    $(call REGISTER_CLUSTER_IF_NEEDED,kind-staging,staging-cluster)
-    $(call REGISTER_CLUSTER_IF_NEEDED,kind-prod,prod-cluster)
+register-dev-staging-prod-clusters-in-argocd: argocd-login-argocd-server-via-cli
+	$(call REGISTER_CLUSTER_IF_NEEDED,kind-dev,dev-cluster)
+	$(call REGISTER_CLUSTER_IF_NEEDED,kind-staging,staging-cluster)
+	$(call REGISTER_CLUSTER_IF_NEEDED,kind-prod,prod-cluster)
+
 
 #2. Label each cluster once (fixed env mapping)
 .PHONY: label-dev-cluster-for-myapp

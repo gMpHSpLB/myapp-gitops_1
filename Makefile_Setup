@@ -21,7 +21,11 @@ help: ## Show all available targets with short descriptions.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # ---------- GLOBAL CONFIG --------------------------------------
-
+RED    := \033[1;31m
+YELLOW := \033[1;33m
+GREEN  :="\033[1;32m"
+CYAN   := \033[1;36m
+RESET  := \033[0m
 # ------------------------Minikube ------------------------------
 # Default minikube profile name.
 # A profile is like a named cluster configuration stored by minikube.
@@ -118,6 +122,12 @@ install-helm-3-18:
 # ----------------------------------------------------------------------------------------------
 #                                Multi Clusters using Kind
 # ----------------------------------------------------------------------------------------------
+.PHONY: install-kind
+install-kind: ## install kind if not installed
+	curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+	chmod +x ./kind
+	sudo mv ./kind /usr/local/bin/kind
+
 .PHONY : create-all-clusters
 create-all-clusters-using-kind:
 	@printf '$(CYAN) %s $(RESET) \n' \

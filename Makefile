@@ -161,7 +161,7 @@ create-argocd-myapp-single-cluster-envs-applicationset-and-status-check: ## Sing
 # 												Multi Clusters
 #								Using: kind, 3 clusters dev/staging/prod
 # ------------------------------------------------------------------------------------------------------------
-.PHONY: create-argocd-myapp-multi-clusters-envs-applicationset-and-status-check
+.PHONY: create-argocd-myapp-kind-multi-clusters-envs-applicationset-and-status-check
 create-argocd-myapp-kind-multi-clusters-envs-applicationset-and-status-check: ## Register env clusters, label them, apply myapp-clusters, sync+wait dev/staging/prod
 	@printf '$(CYAN) %s $(RESET) \n' \
 		' This will:' \
@@ -170,7 +170,7 @@ create-argocd-myapp-kind-multi-clusters-envs-applicationset-and-status-check: ##
 		'       - Step 3. Register all three clusters in Argo CD.' \
 		'       - Step 4. Label them with environment=dev|staging|prod.' \
 		'       - Step 5. Apply applicationsets/myapp-clusters.yaml.' \
-		'       - Step 6. Sync and wait for myapp-dev-cluster, myapp-staging-cluster, myapp-prod-cluster.'; \		
+		'       - Step 6. Sync and wait for myapp-dev-cluster, myapp-staging-cluster, myapp-prod-cluster.'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to continue..."; \
 	read -r _
 
@@ -180,7 +180,7 @@ create-argocd-myapp-kind-multi-clusters-envs-applicationset-and-status-check: ##
 
 	@printf '$(CYAN) %s $(RESET) \n' 'Step 2. Install Argo CD on kind-dev (hub)'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 1..."; read -r _
-	$(MAKE) -f MMakefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator install-argocd-on-kind-dev
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator install-argocd-on-kind-dev
 
 	@printf '$(CYAN) %s $(RESET) \n' 'Step 3. Register dev/staging/prod clusters in ArgoCD (if needed)'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 2..."; read -r _
