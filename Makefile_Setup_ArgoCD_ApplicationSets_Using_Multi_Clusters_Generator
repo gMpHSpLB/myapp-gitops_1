@@ -106,11 +106,11 @@ check-myapp-envs-applicationset-and-apps-exist:
 	-$(ARGOCD_CLI_TOOL) app get myapp-prod && echo "myapp-prod exists" || echo "myapp-prod not found"
 
 # Apply the ApplicationSet that generates myapp-dev/staging/prod
-.PHONY: k8s-apply-myapp-envs-applicationset-to-cluster
-k8s-apply-myapp-envs-applicationset-to-cluster:
+.PHONY: k8s-apply-myapp-multi-clusters-applicationset-to-cluster
+k8s-apply-myapp-multi-clusters-applicationset-to-cluster:
 	$(KUBECTL) apply \
 		-n $(ARGOCD_NAMESPACE) \
-		-f applicationsets/myapp-envs.yaml
+		-f applicationsets/myapp-multi-clusters.yaml
 
 # Watch all myapp-* Applications until they reach Synced & Healthy, with timeout
 .PHONY: argocd-watch-status-of-myapp-envs-applications
@@ -234,31 +234,37 @@ kind-use-dev-context: ## Switch kubectl context to kind-dev
 	@kubectl config use-context kind-dev
 
 .PHONY: kind-use-staging-context
-kind-use-staging-context: ## Switch kubectl context to kind-staging
+kind-use-staging-context: ## Switch kubectl context to kind-kind-staging
 	@kubectl config use-context kind-staging
 
 .PHONY: kind-use-prod-context
-kind-use-prod-context: ## Switch kubectl context to kind-prod
+kind-use-prod-context: ## Switch kubectl context to kind-kind-prod
 	@kubectl config use-context kind-prod
 
 # for Argo CD bootstrap on the dev cluster, you can wrap your existing install logic
 .PHONY: install-argocd-on-dev
-install-argocd-on-dev: ## Install Argo CD on dev (hub) cluster
-	@echo "Installing Argo CD on kind-dev cluster..."
+install-argocd-on-dev: kind-use-dev-context ## Install Argo CD on dev (hub) cluster
+	@echo "Installing Argo CD on kind dev cluster..."
 	@$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator install-argocd-on-kind-dev
 
+# Note: --validate=false tells kubectl not to fetch the OpenAPI schema from the 
+#         API server before applying, which is where your TLS check currently fails.
+# This is acceptable in a local kind lab but you would not do this in production.
+# If you want the “correct” TLS setup later, we’d switch from apiServerAddress: "0.0.0.0" 
+# to using a specific host IP and adding that IP to the API server cert SANs, as shown in 
+# external access guides.
 argocd-create-namespace:
 	@printf '$(YELLOW) %s $(RESET) \n' \
 		'Ensuring ArgoCD namespace exists: $(ARGOCD_NAMESPACE)'
-	@kubectl create namespace $(ARGOCD_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	@kubectl create namespace $(ARGOCD_NAMESPACE) --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
 .PHONY: kind-dev-check-argocd-installed
-kind-dev-check-argocd-installed: kind-use-dev-context ## Ensure Argo CD is installed on kind-dev
+kind-dev-check-argocd-installed: kind-use-dev-context ## Ensure Argo CD is installed on kind-kind-dev
 	@echo "Current kubectl context:"
 	@kubectl config current-context
-	@echo "Checking argocd namespace on kind-dev..."
+	@echo "Checking argocd namespace on kind dev..."
 	@if ! kubectl get ns argocd >/dev/null 2>&1; then \
-	  echo "ERROR: 'argocd' namespace not found on kind-dev. Run install-argocd-on-dev first."; \
+	  echo "ERROR: 'argocd' namespace not found on kind dev. Run install-argocd-on-dev first."; \
 	  exit 1; \
 	fi
 	@echo "'argocd' namespace found. Listing Argo CD pods:"
@@ -283,40 +289,8 @@ install-argocd-on-kind-dev: kind-use-dev-context argocd-create-namespace
 		$(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-argocd-verify; \
 	fi
 
-#1. To register three clusters (idempotent)
-# Helper: register one cluster only if it's not already present
-#	kind create cluster --name dev creates a kubeconfig context named kind-dev.
-#		argocd cluster add kind-dev --name dev-cluster tells Argo CD:
-#			Use the credentials from the kind-dev context in ~/.kube/config.
-# 	Create a cluster secret named dev-cluster in argocd namespace.
-#
-# define REGISTER_CLUSTER_IF_NEEDED
-# if ! $(ARGOCD_CLI_TOOL) cluster list | awk '{print $$2}' | grep -qx $(2); then \
-# 	$(ARGOCD_CLI_TOOL) cluster add $(1) --name $(2); \
-# else \
-# 	echo "Cluster '$(2)' already registered in ArgoCD, skipping."; \
-# fi
-# endef
-
-# Path to a kubeconfig ArgoCD should use for dev cluster
-
-# define REGISTER_CLUSTER_IF_NEEDED
-# if ! $(ARGOCD_CLI_TOOL) cluster list | awk '{print $$2}' | grep -qx $(2); then \
-#     $(ARGOCD_CLI_TOOL) cluster add $(1) --name $(2) \
-#       $(if $(filter $(1),kind-dev),--kubeconfig $(KIND_DEV_KUBECONFIG),); \
-# else \
-#     echo "Cluster '$(2)' already registered in ArgoCD, skipping."; \
-# fi
-# endef
-
-# .PHONY: k8s-argocd-check-argocd-server-accessible
-# k8s-argocd-check-argocd-server-accessible: ## Ensure Argo CD server is reachable before CLI login
-# 	@echo "Checking Argo CD server at $(ARGOCD_SERVER_URL)..."
-# 	@curl -sk "https://$(ARGOCD_SERVER_URL)/healthz" >/dev/null 2>&1 || \
-# 	  ( echo "Argo CD server $(ARGOCD_SERVER_URL) not reachable. Is port-forward/Ingress running?"; exit 1 )
-
 .PHONY: k8s-argocd-check-argocd-server-accessible
-k8s-argocd-check-argocd-server-accessible:
+k8s-argocd-check-argocd-server-accessible: kind-use-dev-context
 	@printf '$(YELLOW) %s $(RESET)\n' \
 		'Checking whether Argo CD server is reachable on local access port'
 	@if lsof -i :$(ARGOCD_PORT) >/dev/null 2>&1; then \
@@ -334,7 +308,7 @@ k8s-argocd-check-argocd-server-accessible:
 		$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator k8s-argocd-expose-argocd-server-to-localaccess; \
 	fi
 
-k8s-argocd-expose-argocd-server-to-localaccess: ## Expose argocd server for local access
+k8s-argocd-expose-argocd-server-to-localaccess: kind-use-dev-context ## Expose argocd server for local access
 	@printf '$(YELLOW) %s $(RESET)\n' \
 		'ArgoCD server is ClusterIP by default — exposing it for local access'
 	@if lsof -i :$(ARGOCD_PORT) >/dev/null 2>&1; then \
@@ -356,28 +330,7 @@ k8s-argocd-expose-argocd-server-to-localaccess: ## Expose argocd server for loca
 		exit 1; \
 	fi
 
-# k8s-argocd-expose-argocd-server-to-localaccess: ## Expose argocd server for local access
-# 	@printf '$(YELLOW) %s $(RESET)\n' \
-# 		'ArgoCD server is ClusterIP by default — exposing it for local access'
-# 	@if lsof -i :$(ARGOCD_PORT) >/dev/null 2>&1; then \
-# 		printf '$(GREEN) %s $(RESET)\n' \
-# 			"Port $(ARGOCD_PORT) is already in use. Reusing existing port-forward or stop it first."; \
-# 	else \
-# 		printf '$(YELLOW) %s $(RESET)\n' 'Starting port-forward in the background'; \
-# 		kubectl port-forward svc/argocd-server -n $(ARGOCD_NAMESPACE) $(ARGOCD_PORT):443 > $(ARGOCD_PF_LOG) 2>&1 & \
-# 		echo $$! > $(ARGOCD_PF_PID); \
-# 		sleep 3; \
-# 		if curl -sk https://127.0.0.1:$(ARGOCD_PORT)/healthz >/dev/null 2>&1; then \
-# 			printf '$(GREEN) %s $(RESET)\n' \
-# 				"Argo CD is now reachable on localhost:$(ARGOCD_PORT)"; \
-# 		else \
-# 			printf '$(RED) %s $(RESET)\n' \
-# 				"Port-forward started but Argo CD is still not reachable"; \
-# 			exit 1; \
-# 		fi; \
-# 	fi
-
-k8s-argocd-get-initial-admin-password:
+k8s-argocd-get-initial-admin-password: kind-use-dev-context
 	@printf '$(YELLOW) %s $(RESET)\n' \
 		'Get the initial admin password' \
 		'It is stored in a Secret and auto-generated during install'; \
@@ -403,14 +356,22 @@ argocd-login-argocd-server-via-cli: kind-use-dev-context k8s-argocd-check-argocd
 		--password "$$PASS" \
 		$(if $(ARGOCD_INSECURE),--insecure,)
 
+
+.PHONY: k8s-apply-myapp-team-project
+k8s-apply-myapp-team-project: ## Apply myapp-team AppProject
+	$(KUBECTL) apply -f projects/myapp-team.yaml -n $(ARGOCD_NAMESPACE)
+
 # Optional: where to store exported kubeconfigs
 KIND_KUBECONFIG_DIR := tmp/kubeconfigs
+# API server URLs for dev/staging/prod kind clusters
+DEV_SERVER   := https://172.26.44.184:6443
+STAGE_SERVER := https://172.26.44.184:6444
+PROD_SERVER  := https://172.26.44.184:6445
 
 .PHONY: prepare-kind-kubeconfig-dir
 prepare-kind-kubeconfig-dir:
 	mkdir -p $(KIND_KUBECONFIG_DIR)
 
-# Export per-context kubeconfigs without rewriting the server field
 .PHONY: export-kind-kubeconfigs
 export-kind-kubeconfigs: prepare-kind-kubeconfig-dir
 	@for ctx in kind-dev kind-staging kind-prod; do \
@@ -419,7 +380,14 @@ export-kind-kubeconfigs: prepare-kind-kubeconfig-dir
 		kubectl config view --raw --minify --context $$ctx > $(KIND_KUBECONFIG_DIR)/$$ctx-kubeconfig.yaml; \
 	done
 
-# Helper function: register a cluster in Argo CD if it is not present
+#1. To register three clusters (idempotent)
+# Helper: register one cluster only if it's not already present
+#	kind create cluster --name dev creates a kubeconfig context named kind-kind-dev.
+#		argocd cluster add kind-dev --name dev-cluster tells Argo CD:
+#			Use the credentials from the dev context in ~/.kube/config.
+# 	Create a cluster secret named dev-cluster in argocd namespace.
+#
+# Helper: register a cluster if not present
 define REGISTER_CLUSTER_IF_NEEDED
 @if ! $(ARGOCD_CLI_TOOL) cluster list | awk 'NR>1 {print $$2}' | grep -qx $(2); then \
 	echo "Registering cluster '$(2)' from context '$(1)'..."; \
@@ -429,28 +397,41 @@ else \
 fi
 endef
 
+# Helper: label the Argo CD cluster secret by matching decoded .data.server value
+define LABEL_CLUSTER_BY_SERVER
+	@SECRET_NAME=$$($(KUBECTL) -n $(ARGOCD_NAMESPACE) get secrets \
+	  -l argocd.argoproj.io/secret-type=cluster \
+	  -o jsonpath='{.items[*].metadata.name}'); \
+	for s in $$SECRET_NAME; do \
+	  SERVER=$$($(KUBECTL) -n $(ARGOCD_NAMESPACE) get secret $$s -o jsonpath='{.data.server}' | base64 --decode); \
+	  if [ "$$SERVER" = "$(1)" ]; then \
+	    echo "Labeling $$s as environment=$(2) (server $$SERVER)"; \
+	    $(KUBECTL) -n $(ARGOCD_NAMESPACE) label secret $$s environment=$(2) --overwrite; \
+	    exit 0; \
+	  fi; \
+	done; \
+	echo "ERROR: no Argo CD cluster secret found for server $(1)"; \
+	exit 1
+endef
+
 .PHONY: register-dev-staging-prod-clusters-in-argocd
 register-dev-staging-prod-clusters-in-argocd: argocd-login-argocd-server-via-cli
 	$(call REGISTER_CLUSTER_IF_NEEDED,kind-dev,dev-cluster)
 	$(call REGISTER_CLUSTER_IF_NEEDED,kind-staging,staging-cluster)
 	$(call REGISTER_CLUSTER_IF_NEEDED,kind-prod,prod-cluster)
 
-
 #2. Label each cluster once (fixed env mapping)
 .PHONY: label-dev-cluster-for-myapp
-label-dev-cluster-for-myapp: ## Label dev-cluster as environment=dev for myapp cluster generator
-	kubectl label secret dev-cluster \
-		-n $(ARGOCD_NAMESPACE) argocd.argoproj.io/secret-type=cluster environment=dev --overwrite
+label-dev-cluster-for-myapp: ## Label dev cluster secret as environment=dev for myapp cluster generator
+	$(call LABEL_CLUSTER_BY_SERVER,$(DEV_SERVER),dev)
 
 .PHONY: label-staging-cluster-for-myapp
-label-staging-cluster-for-myapp: ## Label staging-cluster as environment=staging for myapp cluster generator
-	kubectl label secret staging-cluster \
-		-n $(ARGOCD_NAMESPACE) argocd.argoproj.io/secret-type=cluster environment=staging --overwrite
+label-staging-cluster-for-myapp: ## Label staging cluster secret as environment=staging for myapp cluster generator
+	$(call LABEL_CLUSTER_BY_SERVER,$(STAGE_SERVER),staging)
 
 .PHONY: label-prod-cluster-for-myapp
-label-prod-cluster-for-myapp: ## Label prod-cluster as environment=prod for myapp cluster generator
-	kubectl label secret prod-cluster \
-		-n $(ARGOCD_NAMESPACE) argocd.argoproj.io/secret-type=cluster environment=prod --overwrite
+label-prod-cluster-for-myapp: ## Label prod cluster secret as environment=prod for myapp cluster generator
+	$(call LABEL_CLUSTER_BY_SERVER,$(PROD_SERVER),prod)
 
 #3.  Apply myapp-clusters ApplicationSet to argocd namespace in multi clusters 
 .PHONY: k8s-apply-myapp-multi-clusters-applicationset-to-cluster
@@ -479,10 +460,9 @@ argocd-sync-and-wait-myapp-all-clusters: ## Sync+wait myapp across dev/staging/p
 	@$(ARGOCD_CLI_TOOL) app sync myapp-dev-cluster myapp-staging-cluster myapp-prod-cluster
 	@$(ARGOCD_CLI_TOOL) app wait myapp-dev-cluster myapp-staging-cluster myapp-prod-cluster --sync --health --timeout 600
 
-#  delete all myapp applications (apps only) , created by multi clusters generator
 .PHONY: argocd-delete-all-myapp-apps-created-using-multi-clusters-generator
-argocd-delete-all-myapp-apps-created-using-multi-clusters-generator: ## Delete all ArgoCD applications whose name starts with myapp- and created by multi clusters generator
-	@echo "Deleting ArgoCD applications: myapp-dev, myapp-staging, myapp-prod, myapp-in-cluster, myapp-dev-cluster, myapp-staging-cluster, myapp-prod-cluster (if they exist)..."
+argocd-delete-all-myapp-apps-created-using-multi-clusters-generator: ## Delete myapp-* apps created by myapp-clusters ApplicationSet
+	@echo "Deleting ArgoCD applications: myapp-dev-cluster, myapp-staging-cluster, myapp-prod-cluster (if they exist)..."
 	@printf '$(CYAN) %s $(RESET) \n' \
 		' Deleting ArgoCD applications, ' \
 		' Created by Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator:' \
@@ -495,10 +475,15 @@ argocd-delete-all-myapp-apps-created-using-multi-clusters-generator: ## Delete a
 		' Current myapp apps after deletion: ';
 	@$(ARGOCD_CLI_TOOL) app list | grep myapp- || echo "No myapp-* apps remain."
 
+	@$(ARGOCD_CLI_TOOL) app delete myapp-dev --yes || true
+	@$(ARGOCD_CLI_TOOL) app delete myapp-staging --yes || true
+	@$(ARGOCD_CLI_TOOL) app delete myapp-prod --yes || true
+	@$(ARGOCD_CLI_TOOL) app delete myapp-in-cluster --yes || true
+
 .PHONY: argocd-delete-all-myapp-applicationsets-using-multi-clusters-generator
-argocd-delete-all-myapp-applicationsets-using-multi-clusters-generator: ## Delete myapp-related ApplicationSets created by multi-cluster
+argocd-delete-all-myapp-applicationsets-using-multi-clusters-generator: ## Delete myapp-clusters ApplicationSet created by multi-cluster generator
 	@printf '$(CYAN) %s $(RESET) \n' \
-		' Deleting ArgoCD ApplicationSets:, ' \
-		' Created by Makefile_Setup_ArgoCD_ApplicationSets_Using_Git_Generator:' \
+		' Deleting ArgoCD ApplicationSets, ' \
+		' Created by Makefile_Setup_ArgoCD_ApplicationSets_Using_Multi_Clusters_Generator:' \
 		' myapp-clusters (if they exist)...';
 	@kubectl delete applicationset myapp-clusters -n $(ARGOCD_NAMESPACE) --ignore-not-found

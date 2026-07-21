@@ -7,15 +7,15 @@ spec:
   description: Project for myapp team
   # Allow the GitOps repo AND the OCI Helm repo
   sourceRepos:
-    - "*"  
+    - "*"  # fine for a lab
     # - https://github.com/gMpHSpLB/Gitops-Argocd_1.git
     # - oci://ghcr.io/gmphsplb/helm-lab
   destinations:
-    - server: https://kubernetes.default.svc
+    - server: https://172.26.44.184:6443
       namespace: myapp-dev
-    - server: https://kubernetes.default.svc
+    - server: https://172.26.44.184:6444
       namespace: myapp-staging
-    - server: https://kubernetes.default.svc
+    - server: https://172.26.44.184:6445
       namespace: myapp-prod
   clusterResourceWhitelist:
     - group: "*"

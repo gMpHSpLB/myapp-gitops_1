@@ -53,3 +53,76 @@ kind-delete-prod-cluster: ## Delete prod kind cluster
 .PHONY: kind-get-clusters
 kind-get-clusters: ## List kind clusters
 	@$(KIND) get clusters || true
+
+# Kind cluster names
+KIND_DEV_CLUSTER_NAME 			:= dev
+KIND_STAGING_CLUSTER_NAME 		:= staging
+KIND_PROD_CLUSTER_NAME 			:= prod
+
+# Paths to kind config files
+KIND_CONFIG_DIR 				:= infra/kind
+KIND_DEV_CONFIG 				:= $(KIND_CONFIG_DIR)/kind-dev.yaml
+KIND_STAGING_CONFIG 			:= $(KIND_CONFIG_DIR)/kind-staging.yaml
+KIND_PROD_CONFIG 				:= $(KIND_CONFIG_DIR)/kind-prod.yaml
+
+# ------------------------------------------------------------------------------------------------------
+# This ensures that if you recreate the clusters, they always come up with the external API binding 
+# that Argo CD can eventually reach.
+# ------------------------------------------------------------------------------------------------------
+.PHONY: kind-create-dev
+kind-create-dev:
+	kind create cluster --name $(KIND_DEV_CLUSTER_NAME) --config $(KIND_DEV_CONFIG)
+
+.PHONY: kind-create-staging
+kind-create-staging:
+	kind create cluster --name $(KIND_STAGING_CLUSTER_NAME) --config $(KIND_STAGING_CONFIG)
+
+.PHONY: kind-create-prod
+kind-create-prod:
+	kind create cluster --name $(KIND_PROD_CLUSTER_NAME) --config $(KIND_PROD_CONFIG)
+
+# Note: 
+# The leading - allows the command to fail without stopping the build, and 
+# the docker rm -f lines clean up any leftover node containers
+.PHONY: kind-delete-dev
+kind-delete-dev:
+	@echo "Deleting cluster $(KIND_DEV_CLUSTER_NAME) (ignore errors if missing)..."
+	-kind delete cluster --name $(KIND_DEV_CLUSTER_NAME)
+	-@docker ps -a --format '{{.Names}}' | grep -E '^kind-$(KIND_DEV_CLUSTER_NAME)$$' >/dev/null 2>&1 && \
+	  docker rm -f kind-$(KIND_DEV_CLUSTER_NAME) || true
+
+.PHONY: kind-delete-staging
+kind-delete-staging:
+	@echo "Deleting cluster $(KIND_STAGING_CLUSTER_NAME) (ignore errors if missing)..."
+	-kind delete cluster --name $(KIND_STAGING_CLUSTER_NAME)
+	-@docker ps -a --format '{{.Names}}' | grep -E '^kind-$(KIND_STAGING_CLUSTER_NAME)$$' >/dev/null 2>&1 && \
+	  docker rm -f kind-$(KIND_STAGING_CLUSTER_NAME) || true
+
+.PHONY: kind-delete-prod
+kind-delete-prod:
+	@echo "Deleting cluster $(KIND_PROD_CLUSTER_NAME) (ignore errors if missing)..."
+	-kind delete cluster --name $(KIND_PROD_CLUSTER_NAME)
+	-@docker ps -a --format '{{.Names}}' | grep -E '^kind-$(KIND_PROD_CLUSTER_NAME)$$' >/dev/null 2>&1 && \
+	  docker rm -f kind-$(KIND_PROD_CLUSTER_NAME) || true
+
+.PHONY: kind-recreate-all
+kind-recreate-all: kind-delete-dev kind-delete-staging kind-delete-prod kind-create-dev kind-create-staging kind-create-prod
+
+
+.PHONY: kubeconfig-clean-kind-legacy
+kubeconfig-clean-kind-legacy:
+	@echo "Removing stale kind-kind-* kubeconfig entries..."
+	-kubectl config delete-context kind-kind-dev || true
+	-kubectl config delete-context kind-kind-staging || true
+	-kubectl config delete-context kind-kind-prod || true
+	-kubectl config delete-cluster kind-kind-dev || true
+	-kubectl config delete-cluster kind-kind-staging || true
+	-kubectl config delete-cluster kind-kind-prod || true
+	-kubectl config unset users.kind-kind-dev || true
+	-kubectl config unset users.kind-kind-staging || true
+	-kubectl config unset users.kind-kind-prod || true
+	@echo "Done."
+
+.PHONY: kubeconfig-show-contexts
+kubeconfig-show-contexts:
+	kubectl config get-contexts

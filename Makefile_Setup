@@ -137,7 +137,7 @@ create-all-clusters-using-kind:
 		   ' 	3. prod ' ;\
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to continue..."; \
 	read -r _
-	$(MAKE) -f Makefile_Kind_Clusters kind-create-all-clusters
+	$(MAKE) -f Makefile_Kind_Clusters kind-recreate-all
 	$(MAKE) -f Makefile_Kind_Clusters kind-get-clusters
 
 
