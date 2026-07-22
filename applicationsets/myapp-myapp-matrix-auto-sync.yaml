@@ -28,7 +28,7 @@ spec:
       labels:
         environment: "{{.environment}}"
         cluster: "{{.name}}"
-        requireManualPromotion: "{{ printf \"%v\" .requireManualPromotion }}"
+        requireManualPromotion: "{{ default false .requireManualPromotion }}"
       annotations:
         notifications.argoproj.io/subscribe.on-sync-failed.slack: "{{.notifySlack}}"
         notifications.argoproj.io/subscribe.on-sync-failed.pagerduty: "{{.notifyPagerduty}}"
