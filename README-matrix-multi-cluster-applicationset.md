@@ -29,27 +29,27 @@ The following component diagram shows how the pieces fit together.
 ```mermaid
 flowchart LR
     subgraph GitRepo["Git Repository (myapp-gitops_1)"]
-        G1[envs/dev/env-config.yaml]
-        G2[envs/staging/env-config.yaml]
-        G3[envs/prod/env-config.yaml]
-        G4[Helm chart values\n$values/envs/*/values.yaml]
+        G1["envs/dev/env-config.yaml"]
+        G2["envs/staging/env-config.yaml"]
+        G3["envs/prod/env-config.yaml"]
+        G4["Helm values: values/envs/*/values.yaml"]
     end
 
     subgraph ArgoCD["Argo CD (argocd namespace)"]
-        AS1[ApplicationSet\nmyapp-matrix-auto-sync]
-        AS2[ApplicationSet\nmyapp-matrix-manual-sync]
-        CGen[Cluster Generator\n(environment label)]
-        GGen[Git Generator\n(env-config files)]
-        Matrix[Matrix Generator\nGit x Cluster]
-        AppDev[Application\nmyapp-dev-dev-cluster]
-        AppStg[Application\nmyapp-staging-staging-cluster]
-        AppProd[Application\nmyapp-prod-prod-cluster]
+        AS1["ApplicationSet: myapp-matrix-auto-sync"]
+        AS2["ApplicationSet: myapp-matrix-manual-sync"]
+        CGen["Cluster Generator (environment label)"]
+        GGen["Git Generator (env-config files)"]
+        Matrix["Matrix Generator (Git x Cluster)"]
+        AppDev["Application: myapp-dev-dev-cluster"]
+        AppStg["Application: myapp-staging-staging-cluster"]
+        AppProd["Application: myapp-prod-prod-cluster"]
     end
 
     subgraph Clusters["Target Kubernetes Clusters"]
-        DevCluster[kind-dev\nenvironment=dev]
-        StgCluster[kind-staging\nenvironment=staging]
-        ProdCluster[kind-prod\nenvironment=prod]
+        DevCluster["kind-dev (environment=dev)"]
+        StgCluster["kind-staging (environment=staging)"]
+        ProdCluster["kind-prod (environment=prod)"]
     end
 
     G1 --> GGen
