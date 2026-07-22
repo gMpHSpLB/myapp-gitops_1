@@ -171,7 +171,7 @@ A generator that takes two generators (e.g. Git + Cluster) and produces the Cart
    • “Matrix generator combining Git + Cluster to fan out N environments × M clusters.”
    • Multi‑region + multi‑env scenarios like: dev in cluster A/B, staging in cluster C, prod in cluster D/E.
 
-Progressive rollouts per wave or region. (More Details: [README-matrix-rollingsync-progressive-delivery.md] )
+Progressive rollouts per wave or region. More Details: [README-matrix-rollingsync-progressive-delivery](t06-ArgoCD-ApplicationSets/myapp-gitops_1/README-matrix-rollingsync-progressive-delivery.md)
 
 ### Example:
 
