@@ -5,8 +5,6 @@ metadata:
   namespace: argocd
 spec:
   goTemplate: true
-  goTemplateOptions:
-    - missingkey=error
 
   generators:
     - matrix:
@@ -15,11 +13,11 @@ spec:
               repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
               revision: main
               files:
-                - path: "envs/*/env-config.yaml"
+                - path: envs/prod/env-config.yaml
           - clusters:
               selector:
                 matchLabels:
-                  argocd.argoproj.io/secret-type: cluster
+                  environment: prod
 
   template:
     metadata:
@@ -27,25 +25,25 @@ spec:
       labels:
         environment: "{{.environment}}"
         cluster: "{{.name}}"
-        requireManualPromotion: "{{ default false .requireManualPromotion }}"
+        requireManualPromotion: "{{ .requireManualPromotion }}"
       annotations:
-        notifications.argoproj.io/subscribe.on-sync-failed.slack: "{{.notifySlack}}"
-        notifications.argoproj.io/subscribe.on-sync-failed.pagerduty: "{{.notifyPagerduty}}"
+        notifications.argoproj.io/subscribe.on-sync-failed.slack: "{{ .notifySlack }}"
+        notifications.argoproj.io/subscribe.on-sync-failed.pagerduty: "{{ .notifyPagerduty }}"
     spec:
       project: myapp-team
       sources:
         - repoURL: ghcr.io/gmphsplb/helm-lab
           chart: myapp
-          targetRevision: "{{.chartVersion}}"
+          targetRevision: "{{ .chartVersion }}"
           helm:
             valueFiles:
               - "$values/envs/{{.environment}}/values.yaml"
         - repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
-          targetRevision: "{{.revision}}"
+          targetRevision: "{{ .revision }}"
           ref: values
       destination:
-        server: "{{.server}}"
-        namespace: "{{.namespace}}"
+        server: "{{ .server }}"
+        namespace: "{{ .namespace }}"
       syncPolicy:
         syncOptions:
           - CreateNamespace=true
@@ -57,10 +55,3 @@ spec:
           kind: Deployment
           jsonPointers:
             - /spec/replicas
-
-  templatePatch: |
-    {{- if ne .environment "prod" }}
-    spec:
-      syncPolicy:
-        automated: {}
-    {{- end }}
