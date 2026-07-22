@@ -1,21 +1,21 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: myapp-matrix
+  name: myapp-matrix-manual-sync
   namespace: argocd
 spec:
   goTemplate: true
-  goTemplateOptions: ["missingkey=error"]
+  goTemplateOptions:
+    - missingkey=error
+
   generators:
     - matrix:
         generators:
-          # Generator A: one entry per environment directory, reading env-config.yaml content
           - git:
               repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
               revision: main
               files:
                 - path: "envs/*/env-config.yaml"
-          # Generator B: cluster targets, matched by label to the environment
           - clusters:
               selector:
                 matchLabels:
@@ -23,29 +23,30 @@ spec:
 
   template:
     metadata:
-      name: "myapp-{{.environment}}"
+      name: "myapp-{{.environment}}-{{.name}}"
       labels:
         environment: "{{.environment}}"
+        cluster: "{{.name}}"
+        requireManualPromotion: "{{ printf \"%v\" .requireManualPromotion }}"
       annotations:
         notifications.argoproj.io/subscribe.on-sync-failed.slack: "{{.notifySlack}}"
+        notifications.argoproj.io/subscribe.on-sync-failed.pagerduty: "{{.notifyPagerduty}}"
     spec:
       project: myapp-team
-      source:
-        repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
-        targetRevision: "{{.revision}}"
-        path: .
-        helm:
-          valueFiles:
-            - "envs/{{.environment}}/values.yaml"
+      sources:
+        - repoURL: ghcr.io/gmphsplb/helm-lab
+          chart: myapp
+          targetRevision: "{{.chartVersion}}"
+          helm:
+            valueFiles:
+              - "$values/envs/{{.environment}}/values.yaml"
+        - repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
+          targetRevision: "{{.revision}}"
+          ref: values
       destination:
         server: "{{.server}}"
         namespace: "{{.namespace}}"
       syncPolicy:
-        # goTemplate + sprig conditional: automated block only rendered when autoSync is true.
-        # ArgoCD's ApplicationSet controller supports this via the `elementsYaml`/conditional
-        # patterns documented for goTemplate — shown here in simplified form:
-        automated:
-          prune: '{{if eq .autoSync "true"}}true{{else}}false{{end}}' == "true" ? {} : null
         syncOptions:
           - CreateNamespace=true
           - Validate=true
@@ -56,3 +57,10 @@ spec:
           kind: Deployment
           jsonPointers:
             - /spec/replicas
+
+  templatePatch: |
+    {{- if ne .environment "prod" }}
+    spec:
+      syncPolicy:
+        automated: {}
+    {{- end }}

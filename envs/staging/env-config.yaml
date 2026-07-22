@@ -6,3 +6,4 @@ revision: main
 chartVersion: "1.0.0"
 notifySlack: deployments
 notifyPagerduty: platform-oncall
+requireManualPromotion: false

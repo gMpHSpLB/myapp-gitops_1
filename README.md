@@ -161,6 +161,8 @@ For your plan:
 You’d label your cluster secrets with env=dev, env=staging, env=prod.
 Use cluster generator to automatically target the right clusters for each env
 
+More detail: [README-multi-cluster-applicationset.md](t06-ArgoCD-ApplicationSets/myapp-gitops_1/README-multi-cluster-applicationset.md)
+
 ## 4. Matrix generator (combining Git + Cluster)
 ### What it is:
 A generator that takes two generators (e.g. Git + Cluster) and produces the Cartesian product (N environments × M clusters). Each combination becomes one parameter set for the template.
