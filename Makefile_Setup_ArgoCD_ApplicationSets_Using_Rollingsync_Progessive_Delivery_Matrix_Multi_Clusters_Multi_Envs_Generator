@@ -55,11 +55,13 @@ k8s-describe-myapp-matrix-rollingsync-applicationset: ## Describe matrix Rolling
 	$(KUBECTL) describe applicationset myapp-matrix-rollingsync -n $(ARGOCD_NAMESPACE) || true
 
 .PHONY: k8s-status-myapp-matrix-rollingsync
-k8s-status-myapp-matrix-rollingsync: ## Show RollingSync status and generated apps
-	@echo "ApplicationSet status (RollingSync):"
-	@$(KUBECTL) get applicationset myapp-matrix-rollingsync -n $(ARGOCD_NAMESPACE) -o yaml | yq '.status'
+k8s-status-myapp-matrix-rollingsync: ## Show RollingSync status and generated apps (without yq)
+	@printf '$(CYAN) %s $(RESET)\n' "ApplicationSet myapp-matrix-rollingsync status (raw YAML):"
+	@$(KUBECTL) get applicationset myapp-matrix-rollingsync -n $(ARGOCD_NAMESPACE) -o yaml || echo "ApplicationSet not found"
+
+	@echo ""
 	@echo "Generated Applications (labelled by environment):"
-	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -l environment -o wide || true
+	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -o wide --show-labels | grep myapp- || echo "No myapp-* Applications found"
 
 # --------------------------------------------------------------------
 # Matrix Generator – existing auto-sync and manual-sync ApplicationSets
@@ -348,23 +350,29 @@ watch-myapp-fleet-under-rollingsync: ## Continuously watch myapp fleet rollout (
 	@watch "$(ARGOCD_CLI_TOOL) app list -l environment -o wide | grep myapp- || echo 'No myapp-* applications found yet'"
 
 .PHONY: verify-myapp-fleet-under-rollingsync
-verify-myapp-fleet-under-rollingsync: ## Verify RollingSync status and myapp fleet health
-	@printf '$(CYAN) %s $(RESET)\n' "Verifying RollingSync ApplicationSet and myapp fleet..."
-	@echo "1) ApplicationSet myapp-matrix-rollingsync status:"
-	@$(KUBECTL) get applicationset myapp-matrix-rollingsync -n $(ARGOCD_NAMESPACE) -o yaml | yq '.status' || echo "ApplicationSet not found"
+verify-myapp-fleet-under-rollingsync: ## Verify RollingSync status and myapp fleet health (no yq)
+	@printf '$(CYAN) %s $(RESET)\n' "1) ApplicationSet myapp-matrix-rollingsync status (raw YAML):"; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run"; read -r _; \
+	@$(KUBECTL) get applicationset myapp-matrix-rollingsync -n $(ARGOCD_NAMESPACE) -o yaml || echo "ApplicationSet not found"
 
 	@echo ""
-	@echo "2) Generated Applications (environment label, sync & health):"
+	@echo "2) All myapp-* Applications (sync, health, labels):" ;\
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run"; read -r _; \
 	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -o wide --show-labels | grep myapp- || echo "No myapp-* Applications found"
 
 	@echo ""
-	@echo "3) Summary by environment:"
-	@echo "   - Dev:"
+	@echo "3) Dev Applications:" ;\
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run"; read -r _; \
 	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -l environment=dev -o wide --show-labels || echo "No dev apps"
-	@echo "   - Staging:"
+	@echo ""
+	@echo "4) Staging Applications:"; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run"; read -r _; \
 	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -l environment=staging -o wide --show-labels || echo "No staging apps"
-	@echo "   - Prod:"
+	@echo ""
+	@echo "5) Prod Applications:"\
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run"; read -r _; \
 	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -l environment=prod -o wide --show-labels || echo "No prod apps"
 
-	@printf '$(GREEN) %s $(RESET)\n' "Fleet verification under RollingSync completed. Check sync/health columns and labels for rollout order."
+	@printf '$(GREEN) %s $(RESET)\n' "Fleet verification under RollingSync completed. Check sync/health columns and labels for rollout order." ; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run"; read -r _; \
 	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator watch-myapp-fleet-under-rollingsync

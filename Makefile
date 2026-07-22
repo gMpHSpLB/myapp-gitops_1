@@ -326,6 +326,14 @@ create-argocd-myapp-kind-matrix-rollingsync-progressive-delivery-and-status-chec
 
 	@printf '$(CYAN) %s $(RESET) \n' 'Step 3. Enable Progressive Syncs (RollingSync) in Argo CD'; \
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3 (you may need to edit the ConfigMap manually once)..."; read -r _; \
+	printf '$(RED) %s $(RESET) \n' \
+	"------------------------------------------------------------------------------------------------------"  \
+	" Ensure applicationsetcontroller.enable.progressive.syncs: \"true\" is set in argocd-cmd-params-cm    "  \
+	" # kubectl edit cm -n argocd argocd-cmd-params-cm		    										   "  \
+	" # Add:		    										   										   "  \
+	" # data:                                                                                              "  \
+	"		applicationsetcontroller.enable.progressive.syncs: "true"									   "  \
+	"------------------------------------------------------------------------------------------------------" ; \
 	echo "Ensure applicationsetcontroller.enable.progressive.syncs: \"true\" is set in argocd-cmd-params-cm"; \
 	printf '$(YELLOW) %s $(RESET) \n' "Opening config map in your editor (kubectl edit) – save & exit when done."; \
 	kubectl edit cm -n argocd argocd-cmd-params-cm; \
@@ -358,8 +366,8 @@ create-argocd-myapp-kind-matrix-rollingsync-progressive-delivery-and-status-chec
 	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator k8s-status-myapp-matrix-rollingsync
 
 	@printf '$(GREEN) %s $(RESET) \n' \
-		'RollingSync matrix progressive delivery lab is now set up. Use Argo CD UI or argocd CLI to watch dev → staging → prod rollout.';\
-		'You can call verify-myapp-fleet-under-rollingsync now'; \
+		'RollingSync matrix progressive delivery lab is now set up. Use Argo CD UI or argocd CLI to watch dev → staging → prod rollout.'\
+		'You can call verify-myapp-fleet-under-rollingsync now' \
 		'make -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator verify-myapp-fleet-under-rollingsync';
 	
 
