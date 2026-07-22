@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: myapp-matrix-rollingsync
+  namespace: argocd
+spec:
+  goTemplate: true
+
+  # Progressive Delivery Strategy
+  strategy:
+    type: RollingSync
+    rollingSync:
+      steps:
+        # Step 1: dev
+        - matchExpressions:
+            - key: environment
+              operator: In
+              values: ["dev"]
+          # No maxUpdate: sync all dev apps in this step (typically one)
+        # Step 2: staging
+        - matchExpressions:
+            - key: environment
+              operator: In
+              values: ["staging"]
+          maxUpdate: "1"
+        # Step 3: prod
+        - matchExpressions:
+            - key: environment
+              operator: In
+              values: ["prod"]
+          maxUpdate: "1"
+
+  # Matrix generator: Git x Cluster
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
+              revision: main
+              files:
+                - path: envs/dev/env-config.yaml
+                - path: envs/staging/env-config.yaml
+                - path: envs/prod/env-config.yaml
+          - clusters:
+              selector:
+                matchLabels:
+                  environment: "{{ .environment }}"
+
+  # Template: similar to your matrix auto-sync/manual-sync
+  template:
+    metadata:
+      name: "myapp-{{ .environment }}-{{ .name }}"
+      labels:
+        environment: "{{ .environment }}"
+        cluster: "{{ .name }}"
+        requireManualPromotion: "{{ .requireManualPromotion }}"
+      annotations:
+        notifications.argoproj.io/subscribe.on-sync-failed.slack: "{{ .notifySlack }}"
+        notifications.argoproj.io/subscribe.on-sync-failed.pagerduty: "{{ .notifyPagerduty }}"
+    spec:
+      project: myapp-team
+      sources:
+        - repoURL: ghcr.io/gmphsplb/helm-lab
+          chart: myapp
+          targetRevision: "{{ .chartVersion }}"
+          helm:
+            valueFiles:
+              - "$values/envs/{{ .environment }}/values.yaml"
+        - repoURL: https://github.com/gMpHSpLB/myapp-gitops_1.git
+          targetRevision: "{{ .revision }}"
+          ref: values
+      destination:
+        server: "{{ .server }}"
+        namespace: "{{ .namespace }}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - Validate=true
+          - ApplyOutOfSyncOnly=true
+          - ServerSideApply=true
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas

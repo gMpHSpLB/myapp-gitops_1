@@ -281,6 +281,88 @@ create-argocd-myapp-kind-matrix-multi-clusters-multi-envs-and-status-check: ## F
 	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 8..."; read -r _; \
 	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Matrix_Multi_Clusters_Multi_Envs_Generator argocd-sync-and-wait-myapp-matrix-all
 
+
+# ------------------------------------------------------------------------------------------------------------
+#                    Progressive Delivery (RollingSync) for Matrix ApplicationSet
+#                    Using: kind, 3 clusters dev/staging/prod
+#           Envs: dev / staging / prod driven by env-config.yaml + environment labels
+# ------------------------------------------------------------------------------------------------------------
+.PHONY: create-argocd-myapp-kind-matrix-rollingsync-progressive-delivery-and-status-check
+create-argocd-myapp-kind-matrix-rollingsync-progressive-delivery-and-status-check: ## Full setup for matrix RollingSync progressive delivery
+	@printf '$(CYAN) %s $(RESET) \n' \
+		' This will:' \
+		'       - Step 1. Spin up kind-dev, kind-staging, kind-prod.' \
+		'       - Step 2. Install Argo CD on kind-dev and expose it locally.' \
+		'       - Step 3. Enable Progressive Syncs (RollingSync) in Argo CD.' \
+		'       - Step 4. Apply myapp-team AppProject.' \
+		'       - Step 5. Register all three clusters in Argo CD.' \
+		'       - Step 6. Label clusters with environment=dev|staging|prod.' \
+		'       - Step 7. Apply applicationsets/myapp-matrix-rollingsync.yaml (Git+Cluster matrix with RollingSync).' \
+		'       - Step 8. Force refresh and show RollingSync status & fleet health.'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to continue..."; \
+	read -r _
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 0. Optional cleanup of existing myapp apps and ApplicationSets'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 0 (or Ctrl+C to skip)..."; \
+	read -r _; \
+	printf '$(CYAN) %s $(RESET) \n' 'Only run argocd CLI cleanup if Argo CD is reachable'; \
+	if $(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Matrix_Multi_Clusters_Multi_Envs_Generator argocd-is-up >/dev/null 2>&1; then \
+	  printf '$(CYAN) %s $(RESET) \n' 'Argo CD is up, running CLI-based cleanup for matrix and rolling labs...'; \
+	  $(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Matrix_Multi_Clusters_Multi_Envs_Generator argocd-delete-all-myapp-apps-created-using-matrix-generator; \
+	  $(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Matrix_Multi_Clusters_Multi_Envs_Generator argocd-delete-all-myapp-applicationsets-using-matrix-generator || true; \
+	else \
+	  printf '$(CYAN) %s $(RESET) \n' 'Argo CD not reachable; skipping argocd CLI cleanup and only doing k8s namespace reset...'; \
+	fi; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator reset-myapp-envs-applications-and-namespaces
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 1. Create kind dev/staging/prod clusters'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 1..."; read -r _; \
+	$(MAKE) -f Makefile_Setup create-all-clusters-using-kind
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 2. Install Argo CD on kind-dev (hub) and expose API'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 2..."; read -r _; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator install-argocd-on-kind-dev; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator k8s-argocd-expose-argocd-server-to-localaccess
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 3. Enable Progressive Syncs (RollingSync) in Argo CD'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 3 (you may need to edit the ConfigMap manually once)..."; read -r _; \
+	echo "Ensure applicationsetcontroller.enable.progressive.syncs: \"true\" is set in argocd-cmd-params-cm"; \
+	printf '$(YELLOW) %s $(RESET) \n' "Opening config map in your editor (kubectl edit) – save & exit when done."; \
+	kubectl edit cm -n argocd argocd-cmd-params-cm; \
+	printf '$(CYAN) %s $(RESET) \n' "Restarting ApplicationSet controller to apply progressive syncs flag..."; \
+	kubectl rollout restart deployment argocd-applicationset-controller -n argocd || true
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 4. Apply myapp-team AppProject'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 4..."; read -r _; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator k8s-apply-myapp-team-project
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 5. Register dev/staging/prod clusters in ArgoCD'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 5..."; read -r _; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator register-dev-staging-prod-clusters-in-argocd
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 6. Label dev/staging/prod cluster secrets with environment=dev/staging/prod'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 6..."; read -r _; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator label-dev-cluster-for-myapp; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator label-staging-cluster-for-myapp; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator label-prod-cluster-for-myapp
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 7. Apply myapp-matrix-rollingsync ApplicationSet (Git + Cluster matrix + RollingSync)'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 7..."; read -r _; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator k8s-apply-myapp-matrix-rollingsync-applicationset-to-cluster; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator k8s-describe-myapp-matrix-rollingsync-applicationset
+
+	@printf '$(CYAN) %s $(RESET) \n' 'Step 8. Force refresh of RollingSync ApplicationSet and show fleet status'; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to run Step 8..."; read -r _; \
+	kubectl annotate applicationset myapp-matrix-rollingsync -n argocd \
+	  argocd.argoproj.io/refresh=hard --overwrite; \
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator k8s-status-myapp-matrix-rollingsync
+
+	@printf '$(GREEN) %s $(RESET) \n' \
+		'RollingSync matrix progressive delivery lab is now set up. Use Argo CD UI or argocd CLI to watch dev → staging → prod rollout.';\
+		'You can call verify-myapp-fleet-under-rollingsync now'; \
+		'make -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator verify-myapp-fleet-under-rollingsync';
+	
+
 .PHONY: cleanup-myapp-argocd-lab
 cleanup-myapp-argocd-lab: ## Clean all myapp ArgoCD apps + ApplicationSets
 	@printf '$(RED) %s $(RESET) \n' 'WARNING: This will delete all myapp-* ArgoCD apps and their resources (cascade).'; \

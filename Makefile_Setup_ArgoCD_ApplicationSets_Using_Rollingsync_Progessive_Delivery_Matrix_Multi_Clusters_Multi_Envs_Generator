@@ -1,0 +1,370 @@
+# Use Bash for shell commands in recipes.
+SHELL := /bin/bash
+
+# Default target
+.DEFAULT_GOAL := help
+
+.PHONY: help
+help: ## Show all available targets with short descriptions.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-40s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+# ---------- GLOBAL CONFIG --------------------------------------
+RED    := \033[1;31m
+YELLOW := \033[1;33m
+GREEN  := \033[1;32m
+CYAN   := \033[1;36m
+RESET  := \033[0m
+
+KUBECONFIG              ?= ~/.kube/config
+KUBECTL                 ?= kubectl
+ARGOCD_CLI_TOOL         ?= bin/argocd
+
+ARGOCD_PORT             ?= 8082
+ARGOCD_SERVER_URL       ?= localhost:$(ARGOCD_PORT)
+ARGOCD_USERNAME         ?= admin
+ARGOCD_ADMIN_PASSWORD   ?= admin123
+DISABLE_INSECURE_PATCH  ?= true
+ARGOCD_INSECURE         ?= true
+ARGOCD_PF_LOG           ?= /tmp/argocd-port-forward.log
+ARGOCD_PF_PID           ?= /tmp/argocd-port-forward.pid
+
+ARGOCD_NAMESPACE        ?= argocd
+
+# myapp env namespaces
+K8S_NAMESPACE_DEV       ?= myapp-dev
+K8S_NAMESPACE_STAGING   ?= myapp-staging
+K8S_NAMESPACE_PROD      ?= myapp-prod
+
+# API server URLs for dev/staging/prod kind clusters
+KIND_KUBECONFIG_DIR := tmp/kubeconfigs
+DEV_SERVER          := https://172.26.44.184:6443
+STAGE_SERVER        := https://172.26.44.184:6444
+PROD_SERVER         := https://172.26.44.184:6445
+
+# --------------------------------------------------------------------
+# Progressive Delivery – Matrix RollingSync ApplicationSet
+# --------------------------------------------------------------------
+
+.PHONY: k8s-apply-myapp-matrix-rollingsync-applicationset-to-cluster
+k8s-apply-myapp-matrix-rollingsync-applicationset-to-cluster: ## Apply matrix RollingSync ApplicationSet
+	$(KUBECTL) apply -f applicationsets/myapp-matrix-rollingsync.yaml -n $(ARGOCD_NAMESPACE)
+
+.PHONY: k8s-describe-myapp-matrix-rollingsync-applicationset
+k8s-describe-myapp-matrix-rollingsync-applicationset: ## Describe matrix RollingSync ApplicationSet
+	$(KUBECTL) get applicationset myapp-matrix-rollingsync -n $(ARGOCD_NAMESPACE) -o wide || true
+	$(KUBECTL) describe applicationset myapp-matrix-rollingsync -n $(ARGOCD_NAMESPACE) || true
+
+.PHONY: k8s-status-myapp-matrix-rollingsync
+k8s-status-myapp-matrix-rollingsync: ## Show RollingSync status and generated apps
+	@echo "ApplicationSet status (RollingSync):"
+	@$(KUBECTL) get applicationset myapp-matrix-rollingsync -n $(ARGOCD_NAMESPACE) -o yaml | yq '.status'
+	@echo "Generated Applications (labelled by environment):"
+	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -l environment -o wide || true
+
+# --------------------------------------------------------------------
+# Matrix Generator – existing auto-sync and manual-sync ApplicationSets
+# --------------------------------------------------------------------
+
+.PHONY: k8s-apply-myapp-matrix-auto-sync-applicationset-to-cluster
+k8s-apply-myapp-matrix-auto-sync-applicationset-to-cluster: ## Apply myapp-matrix auto-sync ApplicationSet
+	$(KUBECTL) apply -f applicationsets/myapp-myapp-matrix-auto-sync.yaml -n $(ARGOCD_NAMESPACE)
+
+.PHONY: k8s-apply-myapp-matrix-prod-manual-sync-applicationset-to-cluster
+k8s-apply-myapp-matrix-prod-manual-sync-applicationset-to-cluster: ## Apply myapp-matrix manual-sync ApplicationSet
+	$(KUBECTL) apply -f applicationsets/myapp-matrix-prod-manual-sync.yaml -n $(ARGOCD_NAMESPACE)
+
+.PHONY: k8s-describe-myapp-matrix-auto-sync-applicationset
+k8s-describe-myapp-matrix-auto-sync-applicationset: ## Describe auto-sync ApplicationSet
+	$(KUBECTL) get applicationset myapp-matrix-auto-sync -n $(ARGOCD_NAMESPACE) -o wide || true
+	$(KUBECTL) describe applicationset myapp-matrix-auto-sync -n $(ARGOCD_NAMESPACE) || true
+
+.PHONY: k8s-describe-myapp-matrix-manual-sync-applicationset
+k8s-describe-myapp-matrix-manual-sync-applicationset: ## Describe manual-sync ApplicationSet
+	$(KUBECTL) get applicationset myapp-matrix-manual-sync -n $(ARGOCD_NAMESPACE) -o wide || true
+	$(KUBECTL) describe applicationset myapp-matrix-manual-sync -n $(ARGOCD_NAMESPACE) || true
+
+# --------------------------------------------------------------------
+# Sync helpers (non-progressive, manual triggers)
+# --------------------------------------------------------------------
+
+.PHONY: argocd-sync-and-wait-myapp-dev-staging
+argocd-sync-and-wait-myapp-dev-staging: ## Sync and wait for dev and staging apps
+	@APPS="$$(kubectl get applications -n $(ARGOCD_NAMESPACE) -o name \
+		| sed 's|application.argoproj.io/||' \
+		| grep -E '^myapp-(dev|staging)-' || true)"; \
+	if [ -z "$$APPS" ]; then \
+		echo "No dev/staging myapp applications found."; \
+		exit 1; \
+	fi; \
+	echo "Syncing apps: $$APPS"; \
+	$(ARGOCD_CLI_TOOL) app sync $$APPS; \
+	$(ARGOCD_CLI_TOOL) app wait $$APPS --sync --health --timeout 600
+
+.PHONY: argocd-sync-and-wait-myapp-prod
+argocd-sync-and-wait-myapp-prod: ## Sync and wait for prod app
+	@APPS="$$(kubectl get applications -n $(ARGOCD_NAMESPACE) -o name \
+		| sed 's|application.argoproj.io/||' \
+		| grep -E '^myapp-prod-' || true)"; \
+	if [ -z "$$APPS" ]; then \
+		echo "No prod myapp applications found."; \
+		exit 1; \
+	fi; \
+	echo "Syncing app: $$APPS"; \
+	$(ARGOCD_CLI_TOOL) app sync $$APPS; \
+	$(ARGOCD_CLI_TOOL) app wait $$APPS --sync --health --timeout 600
+
+.PHONY: argocd-sync-and-wait-myapp-matrix-all
+argocd-sync-and-wait-myapp-matrix-all: ## Sync+wait all matrix-generated Applications
+	@echo "Waiting for Applications to appear..."
+	@for i in 1 2 3 4 5 6; do \
+	  APPS="$$(kubectl get applications -n $(ARGOCD_NAMESPACE) -o name \
+	    | sed 's|application.argoproj.io/||' \
+	    | grep '^myapp-' || true)"; \
+	  if [ -n "$$APPS" ]; then \
+	    echo "Found apps: $$APPS"; \
+	    $(ARGOCD_CLI_TOOL) app sync $$APPS; \
+	    $(ARGOCD_CLI_TOOL) app wait $$APPS --sync --health --timeout 600; \
+	    exit 0; \
+	  fi; \
+	  sleep 10; \
+	done; \
+	echo "No myapp-* applications found to sync."; \
+	exit 1
+
+.PHONY: argocd-delete-all-myapp-apps-created-using-matrix-generator
+argocd-delete-all-myapp-apps-created-using-matrix-generator: ## Delete all matrix-generated Applications
+	@echo "Deleting matrix-generated myapp Applications..."
+	@APPS="$$(kubectl get applications -n $(ARGOCD_NAMESPACE) -o name \
+		| sed 's|application.argoproj.io/||' \
+		| grep '^myapp-' || true)"; \
+	if [ -n "$$APPS" ]; then \
+		$(ARGOCD_CLI_TOOL) app delete $$APPS --cascade --yes || true; \
+	else \
+		echo "No myapp-* applications found."; \
+	fi
+
+# Optional explicit per-app sync based on actual matrix names
+.PHONY: argocd-sync-and-wait-myapp-dev-dev-cluster
+argocd-sync-and-wait-myapp-dev-dev-cluster: ## Sync myapp-dev-dev-cluster and wait
+	@$(ARGOCD_CLI_TOOL) app sync myapp-dev-dev-cluster
+	@$(ARGOCD_CLI_TOOL) app wait myapp-dev-dev-cluster --sync --health --timeout 300
+
+.PHONY: argocd-sync-and-wait-myapp-staging-staging-cluster
+argocd-sync-and-wait-myapp-staging-staging-cluster: ## Sync myapp-staging-staging-cluster and wait
+	@$(ARGOCD_CLI_TOOL) app sync myapp-staging-staging-cluster
+	@$(ARGOCD_CLI_TOOL) app wait myapp-staging-staging-cluster --sync --health --timeout 300
+
+.PHONY: argocd-sync-and-wait-myapp-prod-prod-cluster
+argocd-sync-and-wait-myapp-prod-prod-cluster: ## Sync myapp-prod-prod-cluster and wait
+	@$(ARGOCD_CLI_TOOL) app sync myapp-prod-prod-cluster
+	@$(ARGOCD_CLI_TOOL) app wait myapp-prod-prod-cluster --sync --health --timeout 300
+
+# --------------------------------------------------------------------
+# Cluster registration and labeling
+# --------------------------------------------------------------------
+
+.PHONY: prepare-kind-kubeconfig-dir
+prepare-kind-kubeconfig-dir:
+	mkdir -p $(KIND_KUBECONFIG_DIR)
+
+.PHONY: export-kind-kubeconfigs
+export-kind-kubeconfigs: prepare-kind-kubeconfig-dir
+	@for ctx in kind-dev kind-staging kind-prod; do \
+		echo "Exporting kubeconfig for $$ctx..."; \
+		kubectl config use-context $$ctx >/dev/null; \
+		kubectl config view --raw --minify --context $$ctx > $(KIND_KUBECONFIG_DIR)/$$ctx-kubeconfig.yaml; \
+	done
+
+define REGISTER_CLUSTER_IF_NEEDED
+@if ! $(ARGOCD_CLI_TOOL) cluster list | awk 'NR>1 {print $$2}' | grep -qx $(2); then \
+	echo "Registering cluster '$(2)' from context '$(1)'..."; \
+	$(ARGOCD_CLI_TOOL) cluster add $(1) --name $(2); \
+else \
+	echo "Cluster '$(2)' already registered in Argo CD, skipping."; \
+fi
+endef
+
+define LABEL_CLUSTER_BY_SERVER
+	@SECRET_NAME=$$($(KUBECTL) -n $(ARGOCD_NAMESPACE) get secrets \
+	  -l argocd.argoproj.io/secret-type=cluster \
+	  -o jsonpath='{.items[*].metadata.name}'); \
+	for s in $$SECRET_NAME; do \
+	  SERVER=$$($(KUBECTL) -n $(ARGOCD_NAMESPACE) get secret $$s -o jsonpath='{.data.server}' | base64 --decode); \
+	  if [ "$$SERVER" = "$(1)" ]; then \
+	    echo "Labeling $$s as environment=$(2) (server $$SERVER)"; \
+	    $(KUBECTL) -n $(ARGOCD_NAMESPACE) label secret $$s environment=$(2) --overwrite; \
+	    exit 0; \
+	  fi; \
+	done; \
+	echo "ERROR: no Argo CD cluster secret found for server $(1)"; \
+	exit 1
+endef
+
+.PHONY: register-dev-staging-prod-clusters-in-argocd
+register-dev-staging-prod-clusters-in-argocd: argocd-login-argocd-server-via-cli ## Register dev/staging/prod clusters in Argo CD
+	$(call REGISTER_CLUSTER_IF_NEEDED,kind-dev,dev-cluster)
+	$(call REGISTER_CLUSTER_IF_NEEDED,kind-staging,staging-cluster)
+	$(call REGISTER_CLUSTER_IF_NEEDED,kind-prod,prod-cluster)
+
+.PHONY: label-dev-cluster-for-myapp
+label-dev-cluster-for-myapp: ## Label dev cluster secret as environment=dev
+	$(call LABEL_CLUSTER_BY_SERVER,$(DEV_SERVER),dev)
+
+.PHONY: label-staging-cluster-for-myapp
+label-staging-cluster-for-myapp: ## Label staging cluster secret as environment=staging
+	$(call LABEL_CLUSTER_BY_SERVER,$(STAGE_SERVER),staging)
+
+.PHONY: label-prod-cluster-for-myapp
+label-prod-cluster-for-myapp: ## Label prod cluster secret as environment=prod
+	$(call LABEL_CLUSTER_BY_SERVER,$(PROD_SERVER),prod)
+
+# --------------------------------------------------------------------
+# Argo CD install, login, and exposure
+# --------------------------------------------------------------------
+
+.PHONY: kind-use-dev-context
+kind-use-dev-context: ## Switch kubectl context to kind-dev
+	@kubectl config use-context kind-dev
+
+.PHONY: argocd-create-namespace
+argocd-create-namespace:
+	@printf '$(YELLOW) %s $(RESET) \n' \
+	  'Ensuring ArgoCD namespace exists: $(ARGOCD_NAMESPACE)'
+	@kubectl create namespace $(ARGOCD_NAMESPACE) --dry-run=client -o yaml | kubectl apply --validate=false -f -
+
+.PHONY: install-argocd-on-kind-dev
+install-argocd-on-kind-dev: kind-use-dev-context argocd-create-namespace ## Install Argo CD on dev cluster
+	@printf '$(YELLOW) %s $(RESET) \n' \
+	  'See current context?' ; \
+	kubectl config current-context; \
+	printf '$(CYAN) %s $(RESET) \n' "Press ENTER to continue..."; \
+	read -r _
+	@printf '$(YELLOW) %s $(RESET) \n' \
+	  'Check ArgoCD Server is already installed?'
+	@if kubectl get deploy argocd-server -n $(ARGOCD_NAMESPACE) >/dev/null 2>&1; then \
+	  printf '$(GREEN) %s $(RESET) \n' \
+	    'ArgoCD is already installed and running. Skipping install, but verify status'; \
+	  $(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-argocd-verify; \
+	else \
+	  $(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-argocd-install; \
+	  $(MAKE) -f Makefile_Setup_ArgoCD_GitOps_Platform_Engineering k8s-argocd-verify; \
+	fi
+
+.PHONY: k8s-argocd-check-argocd-server-accessible
+k8s-argocd-check-argocd-server-accessible: kind-use-dev-context ## Ensure Argo CD is reachable on localhost:PORT
+	@printf '$(YELLOW) %s $(RESET)\n' \
+	  'Checking whether Argo CD server is reachable on local access port'
+	@if lsof -i :$(ARGOCD_PORT) >/dev/null 2>&1; then \
+	  if curl -sk https://127.0.0.1:$(ARGOCD_PORT)/healthz >/dev/null 2>&1; then \
+	    printf '$(GREEN) %s $(RESET)\n' \
+	      "Argo CD server is reachable on localhost:$(ARGOCD_PORT)"; \
+	  else \
+	    printf '$(YELLOW) %s $(RESET)\n' \
+	      "Port $(ARGOCD_PORT) is open, but Argo CD is not responding. Restarting port-forward."; \
+	    $(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Matrix_Multi_Clusters_Multi_Envs_Generator k8s-argocd-expose-argocd-server-to-localaccess; \
+	  fi; \
+	else \
+	  printf '$(YELLOW) %s $(RESET)\n' \
+	    "Argo CD server is not reachable on localhost:$(ARGOCD_PORT)"; \
+	  $(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Matrix_Multi_Clusters_Multi_Envs_Generator k8s-argocd-expose-argocd-server-to-localaccess; \
+	fi
+
+.PHONY: k8s-argocd-expose-argocd-server-to-localaccess
+k8s-argocd-expose-argocd-server-to-localaccess: kind-use-dev-context ## Port-forward Argo CD server
+	@printf '$(YELLOW) %s $(RESET)\n' \
+	  'ArgoCD server is ClusterIP by default — exposing it for local access'
+	@if lsof -i :$(ARGOCD_PORT) >/dev/null 2>&1; then \
+	  printf '$(GREEN) %s $(RESET)\n' \
+	    "Port $(ARGOCD_PORT) is already in use. Reusing existing port-forward or stop it first."; \
+	else \
+	  printf '$(YELLOW) %s $(RESET)\n' 'Starting port-forward in the background'; \
+	  kubectl port-forward svc/argocd-server -n $(ARGOCD_NAMESPACE) $(ARGOCD_PORT):443 > $(ARGOCD_PF_LOG) 2>&1 & \
+	  echo $$! > $(ARGOCD_PF_PID); \
+	  for i in 1 2 3 4 5; do \
+	    sleep 2; \
+	    if curl -sk https://127.0.0.1:$(ARGOCD_PORT)/healthz >/dev/null 2>&1; then \
+	      printf '$(GREEN) %s $(RESET)\n' "Argo CD is now reachable on localhost:$(ARGOCD_PORT)"; \
+	      exit 0; \
+	    fi; \
+	  done; \
+	  printf '$(RED) %s $(RESET)\n' \
+	    "Port-forward started but Argo CD is still not reachable"; \
+	  exit 1; \
+	fi
+
+.PHONY: argocd-login-argocd-server-via-cli
+argocd-login-argocd-server-via-cli: kind-use-dev-context k8s-argocd-check-argocd-server-accessible ## Login to Argo CD via CLI
+	@echo "Logging in to Argo CD at $(ARGOCD_SERVER_URL) as $(ARGOCD_USERNAME)..."
+	@PASS="$${ARGOCD_ADMIN_PASSWORD:-$$($(KUBECTL) -n $(ARGOCD_NAMESPACE) get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo)}"; \
+	printf '$(GREEN) %s %s $(RESET)\n' 'Admin password:' "$$PASS";\
+	$(ARGOCD_CLI_TOOL) login $(ARGOCD_SERVER_URL) \
+	  --username $(ARGOCD_USERNAME) \
+	  --password "$$PASS" \
+	  $(if $(ARGOCD_INSECURE),--insecure,)
+
+# --------------------------------------------------------------------
+# Project and basic reset
+# --------------------------------------------------------------------
+
+.PHONY: k8s-apply-myapp-team-project
+k8s-apply-myapp-team-project: ## Apply myapp-team AppProject
+	$(KUBECTL) apply -f projects/myapp-team.yaml -n $(ARGOCD_NAMESPACE)
+
+.PHONY: reset-myapp-envs-applications-and-namespaces
+reset-myapp-envs-applications-and-namespaces: ## Delete myapp env Applications and namespaces
+	@printf '$(CYAN) %s $(RESET) \n' 'Only run argocd CLI cleanup if Argo CD is reachable'; \
+	if $(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Matrix_Multi_Clusters_Multi_Envs_Generator argocd-is-up >/dev/null 2>&1; then \
+	  printf '$(CYAN) %s $(RESET) \n' 'Argo CD is up, running CLI-based cleanup...'; \
+	  echo "Deleting myapp-* Applications (if they exist)..."; \
+	  APPS="$$(kubectl get applications -n $(ARGOCD_NAMESPACE) -o name \
+	    | sed 's|application.argoproj.io/||' \
+	    | grep '^myapp-' || true)"; \
+	  if [ -n "$$APPS" ]; then \
+	    $(ARGOCD_CLI_TOOL) app delete $$APPS --cascade --yes || true; \
+	  fi; \
+	else \
+	  printf '$(CYAN) %s $(RESET) \n' 'Argo CD not reachable; skipping argocd CLI cleanup and only doing k8s namespace reset...'; \
+	fi
+	@echo "Deleting namespaces myapp-dev/staging/prod (if they exist)..."
+	-$(KUBECTL) delete ns myapp-dev --ignore-not-found
+	-$(KUBECTL) delete ns myapp-staging --ignore-not-found
+	-$(KUBECTL) delete ns myapp-prod --ignore-not-found
+
+.PHONY: argocd-is-up
+argocd-is-up:
+	@curl -sk https://127.0.0.1:$(ARGOCD_PORT)/healthz >/dev/null 2>&1 \
+	  && echo "Argo CD API is reachable on localhost:$(ARGOCD_PORT)" \
+	  || (echo "Argo CD API not reachable; skipping CLI-based cleanup"; exit 1)
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# 											Verify fleet under RollingSync - Progressive Delivery
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Watch fleet rollout under RollingSync
+.PHONY: watch-myapp-fleet-under-rollingsync
+watch-myapp-fleet-under-rollingsync: ## Continuously watch myapp fleet rollout (dev -> staging -> prod)
+	@printf '$(CYAN) %s $(RESET)\n' "Starting watch on Argo CD applications (filtered by myapp- and environment labels)..."
+	@printf '$(CYAN) %s $(RESET)\n' "Press Ctrl+C to stop."
+	@watch "$(ARGOCD_CLI_TOOL) app list -l environment -o wide | grep myapp- || echo 'No myapp-* applications found yet'"
+
+.PHONY: verify-myapp-fleet-under-rollingsync
+verify-myapp-fleet-under-rollingsync: ## Verify RollingSync status and myapp fleet health
+	@printf '$(CYAN) %s $(RESET)\n' "Verifying RollingSync ApplicationSet and myapp fleet..."
+	@echo "1) ApplicationSet myapp-matrix-rollingsync status:"
+	@$(KUBECTL) get applicationset myapp-matrix-rollingsync -n $(ARGOCD_NAMESPACE) -o yaml | yq '.status' || echo "ApplicationSet not found"
+
+	@echo ""
+	@echo "2) Generated Applications (environment label, sync & health):"
+	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -o wide --show-labels | grep myapp- || echo "No myapp-* Applications found"
+
+	@echo ""
+	@echo "3) Summary by environment:"
+	@echo "   - Dev:"
+	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -l environment=dev -o wide --show-labels || echo "No dev apps"
+	@echo "   - Staging:"
+	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -l environment=staging -o wide --show-labels || echo "No staging apps"
+	@echo "   - Prod:"
+	@$(KUBECTL) get applications -n $(ARGOCD_NAMESPACE) -l environment=prod -o wide --show-labels || echo "No prod apps"
+
+	@printf '$(GREEN) %s $(RESET)\n' "Fleet verification under RollingSync completed. Check sync/health columns and labels for rollout order."
+	$(MAKE) -f Makefile_Setup_ArgoCD_ApplicationSets_Using_Rollingsync_Progessive_Delivery_Matrix_Multi_Clusters_Multi_Envs_Generator watch-myapp-fleet-under-rollingsync
