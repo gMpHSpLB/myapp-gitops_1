@@ -9,7 +9,7 @@ This lab extends the **Matrix multi-cluster ApplicationSet** example by adding *
 - Using **Matrix generator** (Git + Cluster) to create Applications for dev, staging, and prod across multiple clusters.
 - Enabling **Progressive Syncs** on the ApplicationSet controller.
 - Configuring **RollingSync strategy** to roll out changes first to dev, then staging, then prod.
-- Verifying fleet rollout behavior and blast-radius control (broken changes stop at dev/staging). [web:129][web:130][web:139]
+- Verifying fleet rollout behavior and blast-radius control (broken changes stop at dev/staging). 
 
 ---
 
